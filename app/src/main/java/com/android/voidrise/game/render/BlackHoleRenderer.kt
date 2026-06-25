@@ -26,6 +26,7 @@ class BlackHoleRenderer {
 
     // ─── Meshes ───────────────────────────────────────────────────────────────
     private lateinit var sphereMesh : Mesh
+    private lateinit var planetMesh   : Mesh   // higher tessellation for giant worlds
     private lateinit var diskMesh   : Mesh
 
     private val mat  = Matrix4()
@@ -39,7 +40,8 @@ class BlackHoleRenderer {
         diskShader   = loadShader("disk")
         glowShader   = loadShader("glow")
         planetShader = loadShader("planet")
-        sphereMesh   = buildSphereMesh()
+        sphereMesh   = buildSphereMesh(36, 36)
+        planetMesh   = buildSphereMesh(80, 80)
         diskMesh     = buildDiskMesh()
     }
 
@@ -54,12 +56,12 @@ class BlackHoleRenderer {
 
         Gdx.gl.glEnable(GL20.GL_BLEND)
 
-        // ── Step 1: Event horizon FIRST (opaque, writes depth buffer) ─────────
+        // ── Step 1: Event horizon + lensed arcs (opaque, writes depth) ────────
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         Gdx.gl.glDepthMask(true)
         renderEventHorizon3D(camera, px, py, pz, r, time, bh.nitro)
 
-        // ── Step 2: Accretion disk AFTER sphere, with depth test active ───────
+        // ── Step 2: Direct disk crossing (thin band, additive) ────────────────
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE)
         Gdx.gl.glDepthMask(false)
         renderDisk3D(camera, px, py, pz, r, time, bh.nitro, bh.spinAngle)
@@ -105,19 +107,21 @@ class BlackHoleRenderer {
     private fun renderDisk3D(
         camera: PerspectiveCamera,
         px: Float, py: Float, pz: Float, r: Float,
-        time: Float, nitro: Float, spinAngle: Float,
+        time: Float, nitro: Float, @Suppress("UNUSED_PARAMETER") spinAngle: Float,
     ) {
         mat.idt()
         mat.translate(px, py, pz)
         mat.scale(r, r, r)
-        mat.rotate(0f, 1f, 0f, spinAngle * MathUtils.radiansToDegrees * 0.15f)
-        mat.rotate(1f, 0f, 0f, 18f)   // shallower tilt → more Interstellar-like
+        // Spin is shader-driven only — no mesh carousel rotation (looks like flat spinning plate)
+        mat.rotate(1f, 0f, 0f, 24f)   // steeper tilt → more Interstellar ellipse
         diskShader.bind()
         diskShader.setUniformMatrix("u_projViewTrans", camera.combined)
         diskShader.setUniformMatrix("u_worldTrans",    mat)
+        diskShader.setUniformf("u_camPos", camera.position.x, camera.position.y, camera.position.z)
+        diskShader.setUniformf("u_bhPos",  px, py, pz)
         diskShader.setUniformf("u_time",    time)
         diskShader.setUniformf("u_nitro",   nitro)
-        diskShader.setUniformf("u_opacity", 0.82f + nitro * 0.18f)
+        diskShader.setUniformf("u_opacity", 0.88f + nitro * 0.12f)
         diskMesh.render(diskShader, GL20.GL_TRIANGLES)
     }
 
@@ -211,7 +215,8 @@ class BlackHoleRenderer {
         planetShader.setUniformf("u_time",  time)
         planetShader.setUniformf("u_pullT", pullT)
         planetShader.setUniformf("u_seed",  seed)
-        sphereMesh.render(planetShader, GL20.GL_TRIANGLES)
+        val mesh = if (type == 3) planetMesh else sphereMesh
+        mesh.render(planetShader, GL20.GL_TRIANGLES)
     }
 
     fun endPlanetBatch() {
@@ -224,7 +229,7 @@ class BlackHoleRenderer {
 
     // ─── Mesh builders ────────────────────────────────────────────────────────
 
-    private fun buildSphereMesh(): Mesh {
+    private fun buildSphereMesh(widthSegs: Int, heightSegs: Int): Mesh {
         val mb = MeshBuilder()
         mb.begin(
             VertexAttributes(
@@ -235,7 +240,7 @@ class BlackHoleRenderer {
             ),
             GL20.GL_TRIANGLES,
         )
-        SphereShapeBuilder.build(mb, 2f, 2f, 2f, 36, 36)
+        SphereShapeBuilder.build(mb, 2f, 2f, 2f, widthSegs, heightSegs)
         return mb.end()
     }
 
@@ -291,6 +296,6 @@ class BlackHoleRenderer {
     fun dispose() {
         bhShader.dispose(); diskShader.dispose()
         glowShader.dispose(); planetShader.dispose()
-        sphereMesh.dispose(); diskMesh.dispose()
+        sphereMesh.dispose(); planetMesh.dispose(); diskMesh.dispose()
     }
 }

@@ -3,60 +3,80 @@ precision mediump float;
 #endif
 
 varying vec2 v_uv;
+varying vec3 v_worldPos;
+varying float v_lift;
 
+uniform vec3  u_camPos;
+uniform vec3  u_bhPos;
 uniform float u_time;
 uniform float u_nitro;
 uniform float u_opacity;
 
+float dh(vec2 p) {
+    p = fract(p * vec2(0.1031, 0.1030));
+    p += dot(p, p.yx + 19.19);
+    return fract(p.x * p.y);
+}
+float diskNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(dh(i), dh(i + vec2(1.0, 0.0)), u.x),
+        mix(dh(i + vec2(0.0, 1.0)), dh(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float diskFbm(vec2 p) {
+    return diskNoise(p) * 0.62 + diskNoise(p * 2.07 + vec2(1.7, 2.3)) * 0.38;
+}
+
+vec4 diskPlasma(float phi, float radial, float time, float nitro, float beam) {
+    radial = clamp(radial, 0.0, 1.0);
+    float kepler = 6.0 / (radial * 0.65 + 0.12);
+    float spin   = phi + time * kepler;
+    float warpP  = spin + 0.10 * diskFbm(vec2(phi * 2.3, radial * 5.0) + time * 0.4);
+    float storm  = diskFbm(vec2(warpP * 2.37, radial * 7.3 - time * 1.6));
+    float pat    = storm;
+
+    float heat  = 1.0 - radial;
+    float heat2 = heat * heat;
+
+    vec3 innerCol = vec3(1.00, 0.70, 0.25);
+    vec3 midCol   = vec3(0.92, 0.40, 0.05);
+    vec3 outerCol = vec3(0.32, 0.09, 0.02);
+    vec3 color    = mix(outerCol, mix(midCol, innerCol, heat2), heat);
+
+    color *= (0.55 + heat2 * 2.5 + pat * 0.4 + nitro * 1.0) * beam;
+    color = min(color, vec3(1.6, 0.85, 0.35));
+
+    float alpha = heat * (0.5 + pat * 0.35);
+    alpha *= smoothstep(0.0, 0.06, radial);
+    alpha *= 1.0 - smoothstep(0.78, 1.00, radial);
+
+    return vec4(color, alpha);
+}
+
 void main() {
     float angle  = v_uv.x * 6.28318;
-    float radial = v_uv.y;   // 0 = inner edge, 1 = outer edge
+    float radial = v_uv.y;
 
-    // ── Keplerian spin: inner much faster ─────────────────────────────────────
-    float spin = angle + u_time * (4.5 - radial * 3.2);
+    vec3 relBh   = v_worldPos - u_bhPos;
+    vec3 toCam   = normalize(u_camPos - v_worldPos);
+    vec3 tangent = normalize(vec3(-sin(angle), 0.0, cos(angle)));
+    float vDot   = dot(tangent, toCam);
+    float beam   = 0.30 + pow(max(0.0, vDot), 1.8) * 1.2;
 
-    // ── Turbulence bands (layered for complexity) ──────────────────────────────
-    float t1  = sin(spin * 3.0  + radial * 9.0) * 0.5 + 0.5;
-    float t2  = sin(spin * 7.0  - radial * 5.5 - u_time * 0.7) * 0.5 + 0.5;
-    float t3  = sin(spin * 12.0 + radial * 4.0 + u_time * 1.2) * 0.5 + 0.5;
-    float pat = mix(mix(t1, t2, 0.45), t3, 0.28);
+    // Hide disk through the shadow (no white bleed in centre)
+    float rXZ   = length(vec2(relBh.x, relBh.z));
+    float occ   = smoothstep(0.7, 1.35, rXZ);
+    if (occ < 0.02) discard;
 
-    // ── Temperature gradient: blazing white-hot → intense orange → dark ember ──
-    float heat  = 1.0 - radial;            // 1 at inner edge, 0 at outer
-    float heat2 = heat * heat;
-    float heat3 = heat2 * heat;
+    float hotBand = smoothstep(0.48, 0.12, radial) * smoothstep(0.04, 0.10, radial);
+    float recede = smoothstep(-0.1, 0.3, vDot);
 
-    // Inner ring: white-hot plasma (like a solar flare)
-    vec3 innerCol = mix(vec3(1.00, 0.96, 0.85), vec3(1.00, 1.00, 1.00), pat * heat2);
-    // Mid ring: pure orange-red
-    vec3 midCol   = mix(vec3(1.00, 0.48, 0.05), vec3(1.00, 0.65, 0.18), pat);
-    // Outer ring: dark smouldering embers
-    vec3 outerCol = mix(vec3(0.35, 0.08, 0.01), vec3(0.58, 0.18, 0.03), t1 * 0.7 + 0.3);
+    vec4 d = diskPlasma(angle, radial, u_time, u_nitro, beam);
+    d.rgb *= 1.0 + v_lift * 0.8;
+    d.a   *= hotBand * recede * occ * u_opacity;
 
-    vec3 color = mix(outerCol, mix(midCol, innerCol, heat2), heat);
-
-    // Brightness: inner edge blazes brightest — very high contrast like Interstellar
-    float brightness = 0.8 + heat3 * 4.5 + pat * heat * 0.6 + u_nitro * 1.8;
-    color *= brightness;
-
-    // ── Relativistic beaming: near side is dramatically (4x) brighter ─────────
-    // In Interstellar the approaching side of the disk looks almost white.
-    float beamAngle = sin(angle - u_time * 0.28);
-    // remap 0..1 so dim side = 0.28, bright side = 1.55
-    float beam = 0.28 + pow(max(0.0, beamAngle), 2.0) * 1.27;
-    color *= beam;
-
-    // Extra: apply beaming also to the inner glow for dramatic effect
-    float innerGlow = heat3 * (2.5 + u_nitro * 2.5) * (0.6 + max(0.0, beamAngle) * 0.8);
-    color += vec3(1.00, 0.80, 0.35) * innerGlow;
-
-    // ── Edge transparency ─────────────────────────────────────────────────────
-    float alpha = heat * (0.65 + pat * 0.35) * u_opacity;
-    alpha *= smoothstep(0.0, 0.06, radial);          // fade at inner gap
-    alpha *= 1.0 - smoothstep(0.82, 1.00, radial);  // fade at outer edge
-    // Beamed side is also more opaque
-    alpha *= (0.7 + max(0.0, beamAngle) * 0.5);
-
-    if (alpha < 0.006) discard;
-    gl_FragColor = vec4(color, alpha);
+    if (d.a < 0.01) discard;
+    gl_FragColor = d;
 }

@@ -59,43 +59,44 @@ void main(){
         finalColor  = sc + u_glowColor*(3.2+u_pullT*2.5)*rimCore*2.5;
         finalAlpha  = 1.0;
 
-    // ── PLANET (type 3) – guaranteed bright surfaces ──────────────────────────
+    // ── PLANET (type 3) ───────────────────────────────────────────────────────
     } else {
-        // ── INITIALIZE with Ocean defaults (safe fallback) ────────────────────
-        vec3 surfA = vec3(0.14, 0.42, 0.88);   // primary surface color
-        vec3 surfB = vec3(0.86, 0.93, 0.99);   // secondary / bright highlights
-        vec3 atm   = vec3(0.40, 0.72, 1.00);
+        vec3 surfA = vec3(0.05, 0.20, 0.55);   // deep ocean
+        vec3 surfB = vec3(0.16, 0.44, 0.78);   // shallow water — not white
+        vec3 atm   = vec3(0.30, 0.58, 0.90);   // thin blue haze
 
         float arch = floor(u_seed * 5.0);
 
-        // Sequential ifs (not else-if) – avoids uninitialized variable UB on mobile GPUs
-        if (arch > 0.5) { surfA=vec3(0.18,0.58,0.22); surfB=vec3(0.62,0.90,0.46); atm=vec3(0.35,1.00,0.50); } // Jungle
-        if (arch > 1.5) { surfA=vec3(0.88,0.60,0.18); surfB=vec3(1.00,0.90,0.62); atm=vec3(1.00,0.74,0.28); } // Desert
-        if (arch > 2.5) { surfA=vec3(0.62,0.80,0.97); surfB=vec3(0.96,0.98,1.00); atm=vec3(0.72,0.92,1.00); } // Ice
-        if (arch > 3.5) { surfA=vec3(0.84,0.18,0.04); surfB=vec3(1.00,0.65,0.10); atm=vec3(1.00,0.40,0.08); } // Lava
+        if (arch > 0.5) { surfA=vec3(0.10,0.42,0.16); surfB=vec3(0.28,0.62,0.30); atm=vec3(0.25,0.72,0.38); }
+        if (arch > 1.5) { surfA=vec3(0.62,0.42,0.14); surfB=vec3(0.82,0.68,0.28); atm=vec3(0.85,0.58,0.22); }
+        if (arch > 2.5) { surfA=vec3(0.48,0.62,0.82); surfB=vec3(0.72,0.82,0.92); atm=vec3(0.55,0.78,0.95); }
+        if (arch > 3.5) { surfA=vec3(0.58,0.12,0.04); surfB=vec3(0.82,0.32,0.08); atm=vec3(0.85,0.32,0.10); }
 
-        // Surface texture – blend between two bright colors
         float n1   = fbm(rp*2.0 + u_seed);
         float n2   = fbm(rp*4.5 + 0.5 + u_seed*2.0);
-        float texW = clamp(mix(n1,n2,0.35)*0.55 + 0.22, 0.0, 1.0);  // 0.22..0.77
+        float texW = clamp(mix(n1,n2,0.35)*0.55 + 0.22, 0.0, 1.0);
 
         vec3 surfCol = mix(surfA, surfB, texW);
 
-        // Cloud overlay
         float clouds = fbm(rp*3.5 + vec3(u_time*0.04, 0.0, u_seed*1.5));
-        surfCol = mix(surfCol, vec3(0.92,0.95,0.98), smoothstep(0.45,0.62,clouds)*0.45);
+        surfCol = mix(surfCol, vec3(0.72,0.78,0.85), smoothstep(0.50,0.68,clouds)*0.28);
 
-        // Apply lighting (guaranteed >= 0.70 ambient)
+        // Day side vs night — no flat 70% ambient wash
+        float sunLit = max(0.0, dot(n, normalize(vec3(0.55,0.85,-0.25))));
+        float diff   = sunLit * 0.38 + 0.32;
+
         surfCol *= diff;
 
-        // Atmosphere halo
-        vec3 atmosphere = atm * (2.6 + u_pullT * 0.8);
-        finalColor = surfCol + atmosphere*rimAtm*1.2 + atmosphere*rimCore*2.2;
+        // Thin limb haze only — avoids white blob from far away
+        float facing = max(0.0, dot(n, vdir));
+        float atmRing = smoothstep(0.58, 0.94, rim) * (1.0 - facing * 0.35);
+        float atmHot  = pow(max(0.0, rim - 0.72), 4.0);
+        finalColor = surfCol + atm * (atmRing * 0.28 + atmHot * 0.55);
         finalAlpha = 1.0;
     }
 
-    // Absolute minimum – no pixel can be true black
-    finalColor = max(finalColor, vec3(0.07, 0.05, 0.03));
+    // Soft clamp — no HDR white blowout on mobile displays
+    finalColor = clamp(finalColor, vec3(0.02, 0.02, 0.03), vec3(0.92));
 
     // Tidal distortion near BH
     if (u_pullT > 0.05) {

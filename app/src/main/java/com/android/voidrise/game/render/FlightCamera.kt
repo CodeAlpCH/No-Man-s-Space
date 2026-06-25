@@ -15,7 +15,7 @@ class FlightCamera {
 
     init {
         cam.near = 0.5f
-        cam.far  = 18000f
+        cam.far  = 320_000f   // NMS-scale worlds sit ~200k units out
     }
 
     /** Call once before first render to avoid lerp pop. */

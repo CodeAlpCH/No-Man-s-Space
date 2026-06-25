@@ -10,6 +10,7 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.graphics.g3d.utils.MeshBuilder
 import com.badlogic.gdx.graphics.g3d.utils.shapebuilders.SphereShapeBuilder
 import com.badlogic.gdx.math.Matrix4
+import com.badlogic.gdx.math.Vector3
 
 /**
  * Renders a full procedural galaxy as a skybox sphere.
@@ -43,8 +44,10 @@ class GalaxyRenderer {
 
     /**
      * Draw the galaxy — must be called after glClear, before depth-tested geometry.
+     * @param bhPos    black hole world position (for gravitational lensing)
+     * @param bhRadius black hole visual radius
      */
-    fun render(camera: PerspectiveCamera) {
+    fun render(camera: PerspectiveCamera, bhPos: Vector3, bhRadius: Float) {
         // Galaxy is at infinity: no depth test, no depth writes
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(false)
@@ -60,6 +63,9 @@ class GalaxyRenderer {
         shader.bind()
         shader.setUniformMatrix("u_projViewTrans", camera.combined)
         shader.setUniformMatrix("u_worldTrans",    mat)
+        shader.setUniformf("u_camPos",   camera.position.x, camera.position.y, camera.position.z)
+        shader.setUniformf("u_bhPos",  bhPos.x, bhPos.y, bhPos.z)
+        shader.setUniformf("u_bhRadius", bhRadius)
 
         skyMesh.render(shader, GL20.GL_TRIANGLES)
 

@@ -9,16 +9,23 @@ import com.android.voidrise.game.render.BlackHoleRenderer
 import com.android.voidrise.game.render.FlightCamera
 import com.android.voidrise.game.render.GalaxyRenderer
 import com.android.voidrise.game.render.SpaceshipRenderer
+import com.android.voidrise.game.ui.GalaxyMapHud
+import com.android.voidrise.game.ui.PlanetDistanceHud
+import com.android.voidrise.game.world.WorldPlanet
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.ScreenAdapter
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.MathUtils
-import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 
 class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
+
+    companion object {
+        /** Temporarily disabled — planet focus next. */
+        private const val BLACK_HOLE_ENABLED = false
+    }
 
     // ─── Core Systems ─────────────────────────────────────────────────────────
     private val ship           = Spaceship()
@@ -34,16 +41,11 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val joystick = VirtualJoystick()    // right side – heading
     private val throttle = ThrottleLever()      // left side  – speed
 
-    // Boost: center button between throttle and joystick
-    private var boostCx    = 0f
-    private var boostCy    = 0f
-    private val boostR     = 58f
-    private var boostActive = false
-
     // ─── HUD State ────────────────────────────────────────────────────────────
     private var proximityAlpha = 0f
     private var displaySpeed   = 0f
     private var time           = 0f
+    private var planetLabel: PlanetDistanceHud.Label? = null
 
     // ─── Init ─────────────────────────────────────────────────────────────────
 
@@ -64,9 +66,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         val h = Gdx.graphics.height
         joystick.layout(w, h)
         throttle.layout(w, h)
-        // Boost button: horizontally centered, above the bottom edge
-        boostCx = w * 0.50f
-        boostCy = boostR + 36f
     }
 
     // ─── Render Loop ──────────────────────────────────────────────────────────
@@ -77,9 +76,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
         joystick.update(dt)
         throttle.update(dt)
-        checkBoostButton()
         updateShip(dt)
-        updateBH(dt)
+        if (BLACK_HOLE_ENABLED) updateBH(dt)
         flightCam.update(ship, dt)
         particles.update(dt)
 
@@ -88,14 +86,22 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
         // Galaxy skybox first — no depth test/write
-        galaxyRenderer.render(flightCam.cam)
+        if (BLACK_HOLE_ENABLED) {
+            galaxyRenderer.render(flightCam.cam, bhEntity.position, bhEntity.radius)
+        } else {
+            galaxyRenderer.render(flightCam.cam, Vector3(0f, 0f, 1e6f), 0f)
+        }
 
         // 3D world
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthFunc(GL20.GL_LEQUAL)
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
 
-        bhRenderer.renderBH(flightCam.cam, bhEntity, time)
+        if (BLACK_HOLE_ENABLED) {
+            bhRenderer.renderBH(flightCam.cam, bhEntity, time)
+        }
+
+        drawWorldPlanet()
 
         // Spaceship (ModelBatch manages its own GL state)
         shipRenderer.render(ship, flightCam.cam)
@@ -119,20 +125,19 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.pitchInput  = -dir.y
         ship.yawInput    =  dir.x
         ship.throttle    = throttle.value
-        ship.boostActive = boostActive
 
         ship.update(dt)
 
-        // BH gravity
-        val prox = bhEntity.proximityFraction(ship.position)
-        if (prox > 0f) {
-            ship.velocity.mulAdd(bhEntity.gravityOn(ship.position), dt)
-            proximityAlpha = MathUtils.lerp(proximityAlpha, prox, dt * 3f)
-        } else {
-            proximityAlpha = MathUtils.lerp(proximityAlpha, 0f, dt * 2f)
+        if (BLACK_HOLE_ENABLED) {
+            val prox = bhEntity.proximityFraction(ship.position)
+            if (prox > 0f) {
+                ship.velocity.mulAdd(bhEntity.gravityOn(ship.position), dt)
+                proximityAlpha = MathUtils.lerp(proximityAlpha, prox, dt * 3f)
+            } else {
+                proximityAlpha = MathUtils.lerp(proximityAlpha, 0f, dt * 2f)
+            }
+            if (bhEntity.isSwallowed(ship.position)) respawn()
         }
-
-        if (bhEntity.isSwallowed(ship.position)) respawn()
 
         displaySpeed = MathUtils.lerp(displaySpeed, ship.velocity.len(), dt * 4f)
     }
@@ -155,13 +160,22 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
     // ─── Draw ─────────────────────────────────────────────────────────────────
 
+    private fun drawWorldPlanet() {
+        val p = WorldPlanet
+        bhRenderer.beginPlanetBatch(flightCam.cam)
+        bhRenderer.renderPlanetSphere(
+            p.position.x, p.position.y, p.position.z,
+            p.RADIUS,
+            p.baseColor, p.glowColor,
+            p.TYPE, time, 0f, p.SEED,
+        )
+        bhRenderer.endPlanetBatch()
+    }
+
     private fun drawEngineGlow() {
         val (eL, eR) = ship.enginePositions()
         val gSize    = 0.5f + ship.thrustLevel * 0.65f
-        val eColor   = if (boostActive)
-            Color(0.55f, 0.95f, 1.0f, 0.95f)
-        else
-            Color(0.28f, 0.68f, 1.0f, 0.85f)
+        val eColor   = Color(0.28f, 0.68f, 1.0f, 0.85f)
         val eGlow    = Color(0.45f, 0.88f, 1.0f, 1.0f)
 
         bhRenderer.beginPlanetBatch(flightCam.cam)
@@ -173,46 +187,58 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     // ─── HUD ──────────────────────────────────────────────────────────────────
 
     private fun drawHud(sw: Float, sh: Float) {
+        planetLabel = PlanetDistanceHud.compute(
+            flightCam.cam, ship.position,
+            WorldPlanet.position, WorldPlanet.RADIUS, WorldPlanet.NAME,
+            game.hudFont, game.hudFontLarge, sw, sh,
+        )
+
         game.shapes.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
         game.shapes.begin(ShapeRenderer.ShapeType.Filled)
 
         throttle.draw(game.shapes)
         joystick.draw(game.shapes)
-        drawBoostButton()
         drawSpeedBar(sw, sh)
         drawBHProximityWarning(sw, sh)
+        GalaxyMapHud.draw(
+            game.shapes, sw, sh,
+            ship.position, ship.right, ship.forward,
+            WorldPlanet.position, time,
+            linePass = false,
+        )
+        planetLabel?.let {
+            PlanetDistanceHud.drawBackground(game.shapes, it, game.hudFont, game.hudFontLarge)
+        }
 
         game.shapes.end()
-    }
 
-    private fun drawBoostButton() {
-        // Color: active = hot cyan, idle = dim blue
-        val c = if (boostActive)
-            Color(0.25f, 1.0f, 0.85f, 0.80f)
-        else
-            Color(0.20f, 0.65f, 1.0f, 0.42f)
+        game.shapes.begin(ShapeRenderer.ShapeType.Line)
+        GalaxyMapHud.draw(
+            game.shapes, sw, sh,
+            ship.position, ship.right, ship.forward,
+            WorldPlanet.position, time,
+            linePass = true,
+        )
+        game.shapes.end()
 
-        // Outer ring
-        game.shapes.color.set(c)
-        game.shapes.circle(boostCx, boostCy, boostR)
-        // Fill
-        game.shapes.color.set(c.r, c.g, c.b, if (boostActive) 0.25f else 0.08f)
-        game.shapes.circle(boostCx, boostCy, boostR - 6f)
-        // Center pip
-        game.shapes.color.set(0.55f, 0.95f, 1.0f, if (boostActive) 1.0f else 0.40f)
-        game.shapes.circle(boostCx, boostCy, boostR * 0.22f)
+        planetLabel?.let { label ->
+            game.batch.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
+            game.batch.begin()
+            PlanetDistanceHud.drawText(game.batch, label, game.hudFont, game.hudFontLarge)
+            game.batch.end()
+        }
     }
 
     private fun drawSpeedBar(sw: Float, sh: Float) {
         val barW = sw * 0.18f
         val barH = 5f
-        val bx   = sw * 0.50f - barW * 0.5f   // centered above boost button
+        val bx   = sw * 0.50f - barW * 0.5f
         val by   = sh - 36f
 
         game.shapes.color.set(1f, 1f, 1f, 0.06f)
         game.shapes.rect(bx, by, barW, barH)
 
-        val fill = (displaySpeed / Spaceship.MAX_BOOST_SPEED).coerceIn(0f, 1f)
+        val fill = (displaySpeed / Spaceship.MAX_CRUISE_SPEED).coerceIn(0f, 1f)
         val cr   = MathUtils.lerp(0.3f, 1.0f, fill)
         val cg   = MathUtils.lerp(0.8f, 0.35f, fill)
         game.shapes.color.set(cr, cg, 1f - fill * 0.4f, 0.80f)
@@ -229,22 +255,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         game.shapes.rect(0f, sh - b, sw, b)
         game.shapes.rect(0f, 0f, b, sh)
         game.shapes.rect(sw - b, 0f, b, sh)
-    }
-
-    // ─── Input ────────────────────────────────────────────────────────────────
-
-    /** Boost: center button between throttle and joystick. */
-    private fun checkBoostButton() {
-        boostActive = false
-        for (i in 0 until minOf(Gdx.input.maxPointers, 5)) {
-            if (!Gdx.input.isTouched(i)) continue
-            val tx = Gdx.input.getX(i).toFloat()
-            val ty = Gdx.graphics.height - Gdx.input.getY(i).toFloat()
-            if (Vector2(tx - boostCx, ty - boostCy).len() <= boostR * 1.5f) {
-                boostActive = true
-                break
-            }
-        }
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────

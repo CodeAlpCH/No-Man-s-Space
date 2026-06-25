@@ -4,12 +4,14 @@ precision mediump float;
 
 varying vec3 v_dir;
 
-// ── Mobile-safe hash: all intermediates stay below 30 (mediump-safe) ──────────
-// Quilez-style but final product replaced with bounded mixing.
-// Verified: works correctly for cell indices 0..192 on mediump float.
+uniform vec3  u_camPos;
+uniform vec3  u_bhPos;
+uniform float u_bhRadius;
+
+// ── Mobile-safe hash ──────────────────────────────────────────────────────────
 float h1(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973));           // → [0,1]
-    p = fract(p * 13.5 + p.yzx * 7.2 + p.zxy * 5.8);      // max ≈ 26.5, fract → [0,1]
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p = fract(p * 13.5 + p.yzx * 7.2 + p.zxy * 5.8);
     return fract(p.x + p.y + p.z);
 }
 float h2(vec3 p) {
@@ -28,7 +30,6 @@ float h4(vec3 p) {
     return fract(p.x + p.y + p.z);
 }
 
-// ── Smooth noise (trilinear, for FBM) ─────────────────────────────────────────
 float noise(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
@@ -39,16 +40,10 @@ float noise(vec3 p) {
         mix(mix(h1(i+vec3(0,0,1)),h1(i+vec3(1,0,1)), u.x),
             mix(h1(i+vec3(0,1,1)),h1(i+vec3(1,1,1)), u.x), u.y), u.z);
 }
-
-// ── FBM — 2 octaves (low-end mobile safe) ─────────────────────────────────────
 float fbm(vec3 p) {
     return noise(p) * 0.667 + noise(p * 2.1) * 0.333;
 }
 
-// ── Point star — inner-half placement, no clipping ────────────────────────────
-// Stars placed in inner 50% of each cell [0.25..0.75].
-// exp(-sharp * 0.25²) = exp(-5.6) ≈ 0 → glow dies before the cell edge.
-// Single-cell O(1): no neighbour loops, mobile-safe.
 float pointStar(vec3 d, float scale, float density, float sharp, float bright) {
     vec3 s    = (d + 1.0) * scale;
     vec3 cell = floor(s);
@@ -59,23 +54,35 @@ float pointStar(vec3 d, float scale, float density, float sharp, float bright) {
     return exp(-d2 * sharp) * bright;
 }
 
-// ── Star spectral colour (blackbody distribution) ─────────────────────────────
 vec3 starColor(vec3 cell) {
     float t = h4(cell);
-    if      (t > 0.99) return vec3(0.62, 0.74, 1.00); // O/B blue-white  (1%)
-    else if (t > 0.96) return vec3(0.82, 0.90, 1.00); // A  white-blue   (3%)
-    else if (t > 0.88) return vec3(1.00, 0.97, 0.88); // F/G yellow-white (8%)
-    else if (t > 0.66) return vec3(1.00, 0.82, 0.52); // K  orange       (22%)
-    else               return vec3(1.00, 0.62, 0.32); // M  orange-red   (66%)
+    if      (t > 0.99) return vec3(0.62, 0.74, 1.00);
+    else if (t > 0.96) return vec3(0.82, 0.90, 1.00);
+    else if (t > 0.88) return vec3(1.00, 0.97, 0.88);
+    else if (t > 0.66) return vec3(1.00, 0.82, 0.52);
+    else               return vec3(1.00, 0.62, 0.32);
 }
 
-void main() {
-    vec3 d = normalize(v_dir);
+// ── Light sky deflection — single sample, mobile-safe (no acos) ───────────────
+vec3 gravLens(vec3 rayDir, vec3 bhDir, float angSize) {
+    float cosA = dot(rayDir, bhDir);
+    float angSq = max(0.0, 2.0 * (1.0 - cosA));
+    float b = sqrt(angSq + 0.0008);
+    float deflect = angSize * angSize * 0.35 / (b + 0.06);
+    deflect = min(deflect, 0.15);
 
-    // ── DEEP SPACE BACKGROUND ─────────────────────────────────────────────────
+    vec3 perp = rayDir - bhDir * cosA;
+    float pLen = length(perp);
+    if (pLen < 0.0001) return rayDir;
+    return normalize(rayDir + perp / pLen * deflect);
+}
+
+// Sample the galaxy at direction d
+vec3 galaxyAt(vec3 d) {
+    d = normalize(d);
+
     vec3 col = vec3(0.006, 0.008, 0.026);
 
-    // ── MILKY WAY BAND ────────────────────────────────────────────────────────
     float mwBand   = exp(-d.y * d.y / 0.014);
     float phi      = atan(d.z, d.x);
     float armSwirl = sin(phi * 2.0 + 0.8) * 0.5 + 0.5;
@@ -92,46 +99,63 @@ void main() {
     vec3 mwColor = mix(mwCool, mwWarm, core / (core + 0.25));
     col += mwColor * mwDens * 0.36;
 
-    float mwHaze = mwBand * mwFBM * 0.14;
-    col += vec3(0.65, 0.70, 0.80) * mwHaze;
+    col += vec3(0.65, 0.70, 0.80) * mwBand * mwFBM * 0.14;
 
-    // ── STARS — scales ≤ 96 (cell indices ≤ 192, mediump safe) ───────────────
-    // Bright & rare (~5-8 visible) — sharp=90 keeps glow inside inner half
-    float s1  = pointStar(d, 32.0, 0.015, 90.0, 22.0);
-    vec3  c1  = floor((d + 1.0) * 32.0);
-    vec3  col1 = starColor(c1) * s1;
+    float s1 = pointStar(d, 32.0, 0.015, 90.0, 22.0);
+    vec3 c1  = floor((d + 1.0) * 32.0);
+    vec3 col1 = starColor(c1) * s1;
 
-    // Medium (~15-25 visible)
-    float s2  = pointStar(d, 64.0, 0.012, 110.0, 9.0);
-    vec3  c2  = floor((d + 1.0) * 64.0);
+    float s2 = pointStar(d, 64.0, 0.012, 110.0, 9.0);
+    vec3 c2  = floor((d + 1.0) * 64.0);
     float hc2 = h3(c2);
-    vec3  col2 = (hc2 > 0.60 ? vec3(0.80, 0.92, 1.00) :
-                  hc2 > 0.30 ? vec3(1.00, 0.96, 0.84) :
-                                vec3(1.00, 0.76, 0.50)) * s2;
+    vec3 col2 = (hc2 > 0.60 ? vec3(0.80, 0.92, 1.00) :
+                 hc2 > 0.30 ? vec3(1.00, 0.96, 0.84) :
+                               vec3(1.00, 0.76, 0.50)) * s2;
 
-    // Faint/distant (~40-60 visible)
     float s3  = pointStar(d, 96.0, 0.014, 140.0, 4.0);
-
-    // Dense stars in MW band
     float mwS = pointStar(d, 64.0, 0.018, 120.0, 2.5) * mwBand;
 
-    // ── NEBULAE — pure FBM clouds, NO dot-product base → no circles ─────────────
-    // Using max(0, fbm - threshold) means only FBM peaks show, which are
-    // organically shaped like real nebulae. Different offsets → different sky regions.
-
-    // Blue-violet cloud (upper-left sky region)
     float n1 = max(0.0, fbm(d * 1.6 + vec3(3.1, 1.2, 0.7)) - 0.46);
     col += vec3(0.04, 0.10, 0.30) * n1 * 1.2;
 
-    // Warm reddish cloud (right sky region)
     float n2 = max(0.0, fbm(d * 1.4 + vec3(-2.5, 0.8, 1.9)) - 0.48);
     col += vec3(0.22, 0.06, 0.02) * n2 * 1.0;
 
-    // ── COMPOSE ───────────────────────────────────────────────────────────────
     col += col1;
     col += col2 * 0.85;
     col += vec3(0.88, 0.93, 1.00) * s3 * 0.55;
     col += vec3(0.84, 0.88, 0.95) * mwS * 0.65;
+
+    return col;
+}
+
+void main() {
+    vec3 d = normalize(v_dir);
+
+    vec3 toBh  = u_bhPos - u_camPos;
+    float dist = length(toBh);
+    float angSize = u_bhRadius / max(dist, 120.0);
+
+    // Far from BH: one cheap sample, no lensing math
+    if (angSize < 0.003) {
+        gl_FragColor = vec4(galaxyAt(d), 1.0);
+        return;
+    }
+
+    vec3 bhDir = toBh / dist;
+    float cosA = dot(d, bhDir);
+    float angSq = max(0.0, 2.0 * (1.0 - cosA));
+
+    // Subtle lens zone
+    float lensZone = smoothstep(angSize * angSize * 40.0, angSize * angSize * 1.5, angSq);
+    lensZone *= 0.55;
+
+    vec3 sampleDir = mix(d, gravLens(d, bhDir, angSize), lensZone);
+    vec3 col = galaxyAt(sampleDir);
+
+    // Shadow falloff near BH
+    float shadow = smoothstep(angSize * angSize * 0.8, angSize * angSize * 0.15, angSq);
+    col *= 1.0 - shadow * 0.80;
 
     gl_FragColor = vec4(col, 1.0);
 }
