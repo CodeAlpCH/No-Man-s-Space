@@ -40,24 +40,21 @@ float noise(vec3 p) {
             mix(h1(i+vec3(0,1,1)),h1(i+vec3(1,1,1)), u.x), u.y), u.z);
 }
 
-// ── FBM — 3 octaves (mobile-performance safe) ─────────────────────────────────
+// ── FBM — 2 octaves (low-end mobile safe) ─────────────────────────────────────
 float fbm(vec3 p) {
-    float v = 0.0, a = 0.5;
-    for (int i = 0; i < 3; i++) {
-        v += a * noise(p);
-        p *= 2.1;
-        a *= 0.5;
-    }
-    return v;
+    return noise(p) * 0.667 + noise(p * 2.1) * 0.333;
 }
 
-// ── Point star (Voronoi cell) — scales ≤ 96 for mediump safety ────────────────
+// ── Point star — inner-half placement, no clipping ────────────────────────────
+// Stars placed in inner 50% of each cell [0.25..0.75].
+// exp(-sharp * 0.25²) = exp(-5.6) ≈ 0 → glow dies before the cell edge.
+// Single-cell O(1): no neighbour loops, mobile-safe.
 float pointStar(vec3 d, float scale, float density, float sharp, float bright) {
-    vec3 s    = (d + 1.0) * scale;     // max cell index = 2*scale ≤ 192 ✓
+    vec3 s    = (d + 1.0) * scale;
     vec3 cell = floor(s);
     vec3 f    = fract(s);
     if (h1(cell) > density) return 0.0;
-    vec3 ctr = vec3(0.2) + vec3(h2(cell), h3(cell), h4(cell)) * 0.6;
+    vec3 ctr = vec3(0.25) + vec3(h2(cell), h3(cell), h4(cell)) * 0.50;
     float d2 = dot(f - ctr, f - ctr);
     return exp(-d2 * sharp) * bright;
 }
@@ -99,35 +96,36 @@ void main() {
     col += vec3(0.65, 0.70, 0.80) * mwHaze;
 
     // ── STARS — scales ≤ 96 (cell indices ≤ 192, mediump safe) ───────────────
-    // Bright & rare: scale 32
-    float s1  = pointStar(d, 32.0, 0.015, 12.0, 22.0);
+    // Bright & rare (~5-8 visible) — sharp=90 keeps glow inside inner half
+    float s1  = pointStar(d, 32.0, 0.015, 90.0, 22.0);
     vec3  c1  = floor((d + 1.0) * 32.0);
     vec3  col1 = starColor(c1) * s1;
 
-    // Medium: scale 64
-    float s2  = pointStar(d, 64.0, 0.012, 22.0, 9.0);
+    // Medium (~15-25 visible)
+    float s2  = pointStar(d, 64.0, 0.012, 110.0, 9.0);
     vec3  c2  = floor((d + 1.0) * 64.0);
     float hc2 = h3(c2);
     vec3  col2 = (hc2 > 0.60 ? vec3(0.80, 0.92, 1.00) :
                   hc2 > 0.30 ? vec3(1.00, 0.96, 0.84) :
                                 vec3(1.00, 0.76, 0.50)) * s2;
 
-    // Faint/distant: scale 96
-    float s3  = pointStar(d, 96.0, 0.014, 38.0, 4.0);
+    // Faint/distant (~40-60 visible)
+    float s3  = pointStar(d, 96.0, 0.014, 140.0, 4.0);
 
     // Dense stars in MW band
-    float mwS = pointStar(d, 64.0, 0.018, 30.0, 2.5) * mwBand;
+    float mwS = pointStar(d, 64.0, 0.018, 120.0, 2.5) * mwBand;
 
-    // ── NEBULAE — broad smooth gas clouds (NMS style) ─────────────────────────
-    // pow(dot, ~2) = 60-90° wide, no hard edges, FBM for internal structure.
+    // ── NEBULAE — pure FBM clouds, NO dot-product base → no circles ─────────────
+    // Using max(0, fbm - threshold) means only FBM peaks show, which are
+    // organically shaped like real nebulae. Different offsets → different sky regions.
 
-    vec3  n1dir = normalize(vec3(0.55,  0.40, -0.55));
-    float n1    = pow(max(0.0, dot(d, n1dir)), 1.8) * fbm(d * 2.8 + vec3(3.1, 1.2, 0.7));
-    col += vec3(0.04, 0.10, 0.28) * n1 * 0.50;
+    // Blue-violet cloud (upper-left sky region)
+    float n1 = max(0.0, fbm(d * 1.6 + vec3(3.1, 1.2, 0.7)) - 0.46);
+    col += vec3(0.04, 0.10, 0.30) * n1 * 1.2;
 
-    vec3  n2dir = normalize(vec3(-0.65, 0.05, 0.40));
-    float n2    = pow(max(0.0, dot(d, n2dir)), 2.0) * fbm(d * 2.2 + vec3(0.5, 2.8, 1.4));
-    col += vec3(0.18, 0.05, 0.02) * n2 * 0.45;
+    // Warm reddish cloud (right sky region)
+    float n2 = max(0.0, fbm(d * 1.4 + vec3(-2.5, 0.8, 1.9)) - 0.48);
+    col += vec3(0.22, 0.06, 0.02) * n2 * 1.0;
 
     // ── COMPOSE ───────────────────────────────────────────────────────────────
     col += col1;
