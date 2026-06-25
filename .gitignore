@@ -1,0 +1,153 @@
+# =============================================================================
+# VOIDRISE – Android / Gradle / LibGDX
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Gradle
+# -----------------------------------------------------------------------------
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# -----------------------------------------------------------------------------
+# Android Studio / IntelliJ IDEA
+# -----------------------------------------------------------------------------
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/shelf/
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetDropDown.xml
+.idea/deploymentTargetSelector.xml
+.idea/gradle.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/runConfigurations.xml
+.idea/compiler.xml
+.idea/appInsightsSettings.xml
+.idea/AndroidProjectSystem.xml
+.idea/inspectionProfiles/
+.idea/*.iml
+.idea/.name
+
+# -----------------------------------------------------------------------------
+# Lokale Konfiguration & Secrets (NIEMALS committen!)
+# -----------------------------------------------------------------------------
+local.properties
+*.keystore
+*.jks
+*.p12
+*.pfx
+signing.properties
+keystore.properties
+secrets.properties
+google-services.json
+GoogleService-Info.plist
+.env
+.env.*
+!.env.example
+
+# -----------------------------------------------------------------------------
+# Build-Artefakte
+# -----------------------------------------------------------------------------
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+output.json
+outputs/
+
+# LibGDX Native Libraries (werden per copyAndroidNatives beim Build erzeugt)
+app/libs/
+
+# -----------------------------------------------------------------------------
+# NDK / Native Code
+# -----------------------------------------------------------------------------
+.externalNativeBuild/
+.cxx/
+*.o
+*.so
+*.a
+obj/
+
+# -----------------------------------------------------------------------------
+# Kotlin
+# -----------------------------------------------------------------------------
+.kotlin/
+
+# -----------------------------------------------------------------------------
+# Tests & Coverage
+# -----------------------------------------------------------------------------
+/captures/
+*.hprof
+*.exec
+*.ec
+.jacoco/
+coverage/
+test-results/
+androidTest-results/
+
+# -----------------------------------------------------------------------------
+# ProGuard / R8
+# -----------------------------------------------------------------------------
+proguard/
+mapping.txt
+seeds.txt
+usage.txt
+configuration.txt
+
+# -----------------------------------------------------------------------------
+# Fastlane (falls später genutzt)
+# -----------------------------------------------------------------------------
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# -----------------------------------------------------------------------------
+# Betriebssystem
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# -----------------------------------------------------------------------------
+# Editor / Sonstiges
+# -----------------------------------------------------------------------------
+*.swp
+*.swo
+*.swn
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.code-workspace
+
+# -----------------------------------------------------------------------------
+# Crashlytics / Firebase (falls später genutzt)
+# -----------------------------------------------------------------------------
+crashlytics-build.properties
+fabric.properties
