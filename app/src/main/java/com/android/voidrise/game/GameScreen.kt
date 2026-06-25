@@ -15,7 +15,6 @@ import com.android.voidrise.game.ui.GalaxyMapHud
 import com.android.voidrise.game.ui.PlanetDistanceHud
 import com.android.voidrise.game.ui.SpeedHud
 import com.android.voidrise.game.ui.WarpButton
-import com.android.voidrise.game.ui.WarpScreenFx
 import com.android.voidrise.game.warp.WarpSystem
 import com.android.voidrise.game.world.WorldPlanet
 import com.badlogic.gdx.Gdx
@@ -206,9 +205,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
         throttle.draw(game.shapes)
         joystick.draw(game.shapes)
-        SpeedHud.drawBackground(game.shapes)
         warpButton.drawFilled(game.shapes, warpSystem, time)
-        SpeedHud.drawBar(game.shapes, displaySpeed, warpSystem.isActive())
         drawBHProximityWarning(sw, sh)
         GalaxyMapHud.draw(
             game.shapes, sw, sh,
@@ -223,6 +220,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         game.shapes.end()
 
         game.shapes.begin(ShapeRenderer.ShapeType.Line)
+        warpButton.drawLines(game.shapes, warpSystem, time)
         GalaxyMapHud.draw(
             game.shapes, sw, sh,
             ship.position, ship.right, ship.forward,
@@ -236,9 +234,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         planetLabel?.let { label ->
             PlanetDistanceHud.drawText(game.batch, label, game.hudFont, game.hudFontLarge)
         }
-        SpeedHud.drawText(game.batch, game.hudFont, game.hudFontLarge, displaySpeed, warpSystem.isActive())
-        warpButton.drawLabel(game.batch, game.hudFont, warpSystem)
-        WarpScreenFx.drawOverlayText(game.batch, game.hudFont, sw, sh, warpSystem)
+        SpeedHud.drawText(game.batch, game.hudFontLarge, displaySpeed, warpSystem.isActive())
+        warpButton.drawLabel(game.batch, game.hudFontLarge, game.hudFont, warpSystem)
         game.batch.end()
     }
 

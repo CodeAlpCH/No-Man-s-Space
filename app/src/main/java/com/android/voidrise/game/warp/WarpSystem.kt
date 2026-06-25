@@ -49,6 +49,13 @@ class WarpSystem {
 
     fun isEngaged(): Boolean = state == State.COUNTDOWN || state == State.ACTIVE
 
+    /** 0..1 fill for the 3 s activation ring (COUNTDOWN only). */
+    fun chargeProgress(): Float = when (state) {
+        State.COUNTDOWN -> (1f - countdownTimer / COUNTDOWN_SEC).coerceIn(0f, 1f)
+        State.ACTIVE    -> 1f
+        else            -> 0f
+    }
+
     fun update(dt: Float, shipPos: Vector3): Boolean {
         if (messageTimer > 0f) {
             messageTimer -= dt
