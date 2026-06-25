@@ -13,9 +13,10 @@ object SpeedHud {
     private var textX = 0f
     private var textY = 0f
 
-    fun layout(screenW: Int, screenH: Int, leverCenterX: Float, leverBottomY: Float) {
-        textX = leverCenterX + screenW * 0.11f
-        textY = leverBottomY + screenH * 0.055f
+    fun layout(screenW: Int, screenH: Int, @Suppress("UNUSED_PARAMETER") leverCenterX: Float, leverBottomY: Float) {
+        // Own lane: left-center, well above throttle foot and away from warp button
+        textX = screenW * 0.14f
+        textY = (screenH * 0.13f).coerceAtLeast(leverBottomY + screenH * 0.04f)
     }
 
     fun drawText(
@@ -28,14 +29,14 @@ object SpeedHud {
         layout.setText(font, text)
 
         if (warpActive) {
-            font.color.set(0.78f, 0.62f, 1f, 0.95f)
+            font.color.set(0.85f, 0.72f, 1f, 0.98f)
         } else {
             val t = (speedKmS / 120f).coerceIn(0f, 1f)
             font.color.set(
-                MathUtils.lerp(0.62f, 0.92f, t),
                 MathUtils.lerp(0.78f, 0.98f, t),
+                MathUtils.lerp(0.88f, 1f, t),
                 1f,
-                MathUtils.lerp(0.62f, 0.88f, t),
+                MathUtils.lerp(0.82f, 0.96f, t),
             )
         }
 

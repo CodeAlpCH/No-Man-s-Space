@@ -30,6 +30,7 @@ class PlanetRenderer(private val sphereRenderer: BlackHoleRenderer) {
     private val scaleR   = Vector3()
     private val scaleU   = Vector3()
     private val worldPos = Vector3()
+    private val renderOrder = mutableListOf<WorldPlanet.Planet>()
 
     fun init() {
         ShaderProgram.pedantic = false
@@ -41,19 +42,34 @@ class PlanetRenderer(private val sphereRenderer: BlackHoleRenderer) {
     }
 
     fun render(camera: PerspectiveCamera, shipPos: Vector3, time: Float) {
-        val surfaceDist = WorldPlanet.surfaceDistance(shipPos)
-        if (surfaceDist > WorldPlanet.MESH_LOD_SURFACE_KM) {
-            renderImpostor(camera)
-        } else {
-            renderMesh(camera, shipPos, time)
+        renderOrder.clear()
+        renderOrder.addAll(WorldPlanet.planets)
+        renderOrder.sortByDescending { camera.position.dst2(it.position) }
+
+        renderOrder.forEach { planet ->
+            renderPlanet(planet, camera, shipPos, time)
         }
     }
 
-    private fun renderImpostor(camera: PerspectiveCamera) {
-        val px = WorldPlanet.position.x
-        val py = WorldPlanet.position.y
-        val pz = WorldPlanet.position.z
-        val d  = WorldPlanet.RADIUS * 2f
+    private fun renderPlanet(
+        planet: WorldPlanet.Planet,
+        camera: PerspectiveCamera,
+        shipPos: Vector3,
+        time: Float,
+    ) {
+        val surfaceDist = WorldPlanet.surfaceDistance(shipPos, planet)
+        if (surfaceDist > WorldPlanet.MESH_LOD_SURFACE_KM) {
+            renderImpostor(planet, camera)
+        } else {
+            renderMesh(planet, camera, shipPos, time)
+        }
+    }
+
+    private fun renderImpostor(planet: WorldPlanet.Planet, camera: PerspectiveCamera) {
+        val px = planet.position.x
+        val py = planet.position.y
+        val pz = planet.position.z
+        val d  = planet.radius * 2f
 
         buildBillboard(px, py, pz, d, camera)
 
@@ -64,24 +80,59 @@ class PlanetRenderer(private val sphereRenderer: BlackHoleRenderer) {
         impostorShader.bind()
         impostorShader.setUniformMatrix("u_projViewTrans", camera.combined)
         impostorShader.setUniformMatrix("u_worldTrans", mat)
-        impostorShader.setUniformf("u_oceanDeep",    0.03f, 0.12f, 0.38f)
-        impostorShader.setUniformf("u_oceanShallow", 0.10f, 0.32f, 0.62f)
-        impostorShader.setUniformf("u_atmColor",     0.30f, 0.58f, 0.90f)
+        impostorShader.setUniformf("u_oceanDeep", planet.baseColor.r * 0.35f, planet.baseColor.g * 0.35f, planet.baseColor.b * 0.45f)
+        impostorShader.setUniformf("u_oceanShallow", planet.baseColor.r, planet.baseColor.g, planet.baseColor.b)
+        impostorShader.setUniformf("u_atmColor", planet.glowColor.r, planet.glowColor.g, planet.glowColor.b)
+        impostorShader.setUniformf("u_seed", planet.seed)
 
         quadMesh.render(impostorShader, GL20.GL_TRIANGLES)
         Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
-    private fun renderMesh(camera: PerspectiveCamera, shipPos: Vector3, time: Float) {
-        val p = WorldPlanet
+    private fun renderMesh(planet: WorldPlanet.Planet, camera: PerspectiveCamera, shipPos: Vector3, time: Float) {
+        val surfaceDist = WorldPlanet.surfaceDistance(shipPos, planet)
         sphereRenderer.beginPlanetBatch(camera, GraphicsQuality.planetShaderDetail(shipPos))
         sphereRenderer.renderPlanetSphere(
-            p.position.x, p.position.y, p.position.z,
-            p.RADIUS,
-            p.baseColor, p.glowColor,
-            p.TYPE, time, 0f, p.SEED,
+            planet.position.x, planet.position.y, planet.position.z,
+            planet.radius,
+            planet.baseColor, planet.glowColor,
+            planet.type, time, 0f, planet.seed,
         )
         sphereRenderer.endPlanetBatch()
+
+        val cloudDensity = cloudDensity(surfaceDist)
+        if (cloudDensity > 0.01f) {
+            sphereRenderer.renderCloudShell(
+                camera,
+                planet.position.x, planet.position.y, planet.position.z,
+                planet.radius * 1.007f,
+                time,
+                cloudDensity,
+            )
+        }
+
+        val shellDensity = atmosphereDensity(surfaceDist)
+        if (shellDensity > 0.01f) {
+            sphereRenderer.renderAtmosphereShell(
+                camera,
+                planet.position.x, planet.position.y, planet.position.z,
+                planet.radius * 1.015f,
+                planet.glowColor,
+                shellDensity,
+            )
+        }
+    }
+
+    private fun cloudDensity(surfaceDistKm: Float): Float {
+        val approachFade = 1f - ((surfaceDistKm - 180f) / (WorldPlanet.MESH_LOD_SURFACE_KM - 180f)).coerceIn(0f, 1f)
+        val underCloudFade = ((surfaceDistKm - 90f) / 180f).coerceIn(0f, 1f)
+        return (0.22f + approachFade * 0.56f) * underCloudFade * GraphicsQuality.cloudShellScale
+    }
+
+    private fun atmosphereDensity(surfaceDistKm: Float): Float {
+        val approachFade = 1f - ((surfaceDistKm - 120f) / (WorldPlanet.MESH_LOD_SURFACE_KM - 120f)).coerceIn(0f, 1f)
+        val insideFade = ((surfaceDistKm - 520f) / 200f).coerceIn(0f, 1f)
+        return (0.16f + approachFade * 0.42f) * insideFade * GraphicsQuality.atmosphereShellScale
     }
 
     /** Quad faces the camera — always looks like a round planet disc from afar. */

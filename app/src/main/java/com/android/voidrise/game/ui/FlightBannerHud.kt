@@ -87,7 +87,7 @@ class FlightBannerHud {
     }
 
     private fun content(kind: Kind) = when (kind) {
-        Kind.ATMOSPHERE -> FlashContent("ATMOSPHÄREN EINTRITT", 0.20f, 0.95f, 1.0f)
+        Kind.ATMOSPHERE -> FlashContent("ATMOSPHÄRE BETRETEN", 0.20f, 0.95f, 1.0f)
         Kind.WARP_BLOCKED -> FlashContent("WARP GESPERRT", 1.0f, 0.28f, 0.10f)
     }
 

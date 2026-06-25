@@ -1,5 +1,6 @@
 package com.android.voidrise.game.render
 
+import com.android.voidrise.game.GraphicsQuality
 import com.android.voidrise.game.ui.AtmosphereFog
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL20
@@ -25,7 +26,7 @@ class AtmosphereFogRenderer {
         quad = buildQuad()
     }
 
-    fun render(surfaceDistKm: Float, sw: Float, sh: Float) {
+    fun render(surfaceDistKm: Float, sw: Float, sh: Float, time: Float) {
         if (surfaceDistKm > AtmosphereFog.FOG_START_KM) return
 
         Gdx.gl.glEnable(GL20.GL_BLEND)
@@ -38,11 +39,14 @@ class AtmosphereFogRenderer {
         shader.setUniformMatrix("u_projViewTrans", proj)
         shader.setUniformf("u_surfaceDist", surfaceDistKm)
         shader.setUniformf("u_fogStart", AtmosphereFog.FOG_START_KM)
+        shader.setUniformf("u_time", time)
+        shader.setUniformf("u_alphaScale", GraphicsQuality.atmosphereFogAlphaScale)
+        shader.setUniformf("u_cloudStrength", GraphicsQuality.atmosphereCloudStrength)
 
         quad.render(shader, GL20.GL_TRIANGLES)
 
         Gdx.gl.glDepthMask(true)
-        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
     }
 
     private fun buildQuad(): Mesh {

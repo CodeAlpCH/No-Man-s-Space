@@ -22,8 +22,10 @@ class BlackHoleRenderer {
     // ─── Shaders ──────────────────────────────────────────────────────────────
     private lateinit var bhShader     : ShaderProgram   // event horizon sphere
     private lateinit var diskShader   : ShaderProgram   // accretion disk ring
-    private lateinit var glowShader   : ShaderProgram   // halos
-    private lateinit var planetShader : ShaderProgram   // matter objects
+    private lateinit var glowShader       : ShaderProgram   // halos
+    private lateinit var planetShader     : ShaderProgram   // matter objects
+    private lateinit var atmosphereShader : ShaderProgram   // planet atmosphere shell
+    private lateinit var cloudShader      : ShaderProgram   // visible cloud layer
 
     // ─── Meshes ───────────────────────────────────────────────────────────────
     private lateinit var sphereMesh : Mesh
@@ -41,6 +43,8 @@ class BlackHoleRenderer {
         diskShader   = loadShader("disk")
         glowShader   = loadShader("glow")
         planetShader = loadShader("planet")
+        atmosphereShader = loadShader("atmosphere")
+        cloudShader = loadShader("cloud")
         sphereMesh   = buildSphereMesh(36, 36)
         val segs     = GraphicsQuality.planetMeshSegments
         planetMesh   = buildSphereMesh(segs, segs)
@@ -226,6 +230,55 @@ class BlackHoleRenderer {
         Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
+    fun renderAtmosphereShell(
+        camera: PerspectiveCamera,
+        wx: Float, wy3D: Float, wz: Float,
+        radius: Float,
+        color: Color,
+        density: Float,
+    ) {
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE)
+        Gdx.gl.glDepthMask(false)
+
+        mat.setToTranslationAndScaling(wx, wy3D, wz, radius, radius, radius)
+        atmosphereShader.bind()
+        atmosphereShader.setUniformMatrix("u_projViewTrans", camera.combined)
+        atmosphereShader.setUniformMatrix("u_worldTrans", mat)
+        atmosphereShader.setUniformf("u_camPos", camera.position.x, camera.position.y, camera.position.z)
+        atmosphereShader.setUniformf("u_atmColor", color.r, color.g, color.b)
+        atmosphereShader.setUniformf("u_density", density)
+        planetMesh.render(atmosphereShader, GL20.GL_TRIANGLES)
+
+        Gdx.gl.glDepthMask(true)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+    }
+
+    fun renderCloudShell(
+        camera: PerspectiveCamera,
+        wx: Float, wy3D: Float, wz: Float,
+        radius: Float,
+        time: Float,
+        density: Float,
+    ) {
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        Gdx.gl.glDepthMask(false)
+
+        mat.setToTranslationAndScaling(wx, wy3D, wz, radius, radius, radius)
+        cloudShader.bind()
+        cloudShader.setUniformMatrix("u_projViewTrans", camera.combined)
+        cloudShader.setUniformMatrix("u_worldTrans", mat)
+        cloudShader.setUniformf("u_camPos", camera.position.x, camera.position.y, camera.position.z)
+        cloudShader.setUniformf("u_time", time)
+        cloudShader.setUniformf("u_density", density)
+        planetMesh.render(cloudShader, GL20.GL_TRIANGLES)
+
+        Gdx.gl.glDepthMask(true)
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+    }
+
     // kept for compatibility – unused now
     fun beginMatterBatch(camera: PerspectiveCamera) = beginPlanetBatch(camera, 0f)
     fun endMatterBatch() = endPlanetBatch()
@@ -298,7 +351,7 @@ class BlackHoleRenderer {
 
     fun dispose() {
         bhShader.dispose(); diskShader.dispose()
-        glowShader.dispose(); planetShader.dispose()
+        glowShader.dispose(); planetShader.dispose(); atmosphereShader.dispose(); cloudShader.dispose()
         sphereMesh.dispose(); planetMesh.dispose(); diskMesh.dispose()
     }
 }

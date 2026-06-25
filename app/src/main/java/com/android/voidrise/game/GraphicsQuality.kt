@@ -16,14 +16,26 @@ object GraphicsQuality {
         private set
 
     val planetMeshSegments: Int
-        get() = if (tier == Tier.HIGH) 72 else 40
+        get() = if (tier == Tier.HIGH) 72 else 28
 
-    /** Only applies once inside mesh LOD range (very close). */
+    val cloudShellScale: Float
+        get() = if (tier == Tier.HIGH) 1f else 0f
+
+    val atmosphereShellScale: Float
+        get() = if (tier == Tier.HIGH) 1f else 0.35f
+
+    val atmosphereFogAlphaScale: Float
+        get() = if (tier == Tier.HIGH) 1f else 0.45f
+
+    val atmosphereCloudStrength: Float
+        get() = if (tier == Tier.HIGH) 1f else 0f
+
+    /** Ramps surface noise in as the planet fills the view, avoiding a flat blue mesh band. */
     fun planetShaderDetail(shipPos: Vector3): Float {
         val surfaceDist = WorldPlanet.surfaceDistance(shipPos)
-        if (surfaceDist > 800f) return 0f
-        if (tier == Tier.HIGH) return 1f
-        return 0f
+        val detail = 1f - ((surfaceDist - DETAIL_FULL_KM) / (WorldPlanet.MESH_LOD_SURFACE_KM - DETAIL_FULL_KM))
+            .coerceIn(0f, 1f)
+        return if (tier == Tier.HIGH) detail else 0f
     }
 
     fun detect() {
@@ -32,8 +44,8 @@ object GraphicsQuality {
         val heapMb = Runtime.getRuntime().maxMemory() / (1024 * 1024)
         val density = g.density
 
-        // Budget phones: small heap + moderate resolution (A16 class)
-        val lowEnd = heapMb < 384 && pixels < 2_800_000L
+        // Budget phones: A16-class devices need cheaper atmosphere/water paths.
+        val lowEnd = (heapMb <= 512 && pixels < 3_000_000L) || (pixels < 2_800_000L && density <= 3f)
         val flagship = pixels >= 3_200_000L || (heapMb >= 512 && density >= 3f)
 
         tier = when {
@@ -47,4 +59,6 @@ object GraphicsQuality {
             "tier=$tier pixels=$pixels heapMb=$heapMb density=$density",
         )
     }
+
+    private const val DETAIL_FULL_KM = 350f
 }

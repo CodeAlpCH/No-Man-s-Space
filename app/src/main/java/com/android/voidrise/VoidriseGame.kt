@@ -16,6 +16,15 @@ class VoidriseGame : Game() {
         private set
     lateinit var hudFontLarge: BitmapFont
         private set
+    /** Dedicated larger font for speed readout. */
+    lateinit var hudFontSpeed: BitmapFont
+        private set
+    /** WARP label inside button core (~24 px in HTML mock). */
+    lateinit var hudFontWarp: BitmapFont
+        private set
+    /** Countdown digits 3-2-1 (~58 px in HTML mock). */
+    lateinit var hudFontCountdown: BitmapFont
+        private set
 
     override fun create() {
         batch = SpriteBatch()
@@ -23,6 +32,9 @@ class VoidriseGame : Game() {
         val scale = 1.6f * (Gdx.graphics.density / 2f).coerceIn(0.85f, 1.4f)
         hudFont = BitmapFont().apply { data.setScale(scale * 0.75f) }
         hudFontLarge = BitmapFont().apply { data.setScale(scale) }
+        hudFontSpeed = BitmapFont().apply { data.setScale(scale * 1.45f) }
+        hudFontWarp = BitmapFont().apply { data.setScale(scale * 1.05f) }
+        hudFontCountdown = BitmapFont().apply { data.setScale(scale * 2.75f) }
         setScreen(GameScreen(this))
     }
 
@@ -31,6 +43,9 @@ class VoidriseGame : Game() {
         shapes.dispose()
         hudFont.dispose()
         hudFontLarge.dispose()
+        hudFontSpeed.dispose()
+        hudFontWarp.dispose()
+        hudFontCountdown.dispose()
         screen?.dispose()
     }
 }

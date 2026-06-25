@@ -79,17 +79,20 @@ void main(){
         if (arch > 2.5) { surfA=vec3(0.48,0.62,0.82); surfB=vec3(0.72,0.82,0.92); atm=vec3(0.55,0.78,0.95); }
         if (arch > 3.5) { surfA=vec3(0.58,0.12,0.04); surfB=vec3(0.82,0.32,0.08); atm=vec3(0.85,0.32,0.10); }
 
-        vec3 wp = (u_detail > 0.5) ? warp(rp) : rp;
+        float detailT = clamp(u_detail, 0.0, 1.0);
+        vec3 wp = (detailT > 0.03) ? mix(rp, warp(rp), detailT) : rp;
         vec3 surfCol;
 
         // ── Ocean (arch 0) ────────────────────────────────────────────────────
         if (arch < 0.5) {
+            float depthLow = fbm(wp * 1.6 + u_seed * 3.0);
             float depth;
-            if (u_detail > 0.5) {
-                depth = fbm4(wp * 1.5 + u_seed * 3.0);
-                depth = mix(depth, fbm4(wp * 2.8 + 2.4), 0.35);
+            if (detailT > 0.03) {
+                float depthHigh = fbm4(wp * 1.5 + u_seed * 3.0);
+                depthHigh = mix(depthHigh, fbm4(wp * 2.8 + 2.4), 0.35);
+                depth = mix(depthLow, depthHigh, smoothstep(0.12, 0.85, detailT));
             } else {
-                depth = fbm(wp * 1.6 + u_seed * 3.0);
+                depth = depthLow;
             }
             float shallow = smoothstep(0.30, 0.75, depth);
             vec3 deepW  = vec3(0.03, 0.12, 0.38);
@@ -97,10 +100,46 @@ void main(){
             vec3 shelfW = vec3(0.14, 0.42, 0.72);
             surfCol = mix(deepW, midW, smoothstep(0.0, 0.55, shallow));
             surfCol = mix(surfCol, shelfW, smoothstep(0.55, 1.0, shallow) * 0.65);
-            float clouds = (u_detail > 0.5)
-                ? fbm4(wp * 2.0 + vec3(u_seed * 2.0, 1.8, 0.6))
-                : fbm(wp * 2.0 + u_seed * 1.5);
-            surfCol = mix(surfCol, vec3(0.50, 0.62, 0.74), smoothstep(0.56, 0.80, clouds) * 0.16);
+            float cloudsLow = fbm(wp * 2.0 + u_seed * 1.5);
+            float clouds = cloudsLow;
+            if (detailT > 0.03) {
+                float cloudsHigh = fbm4(wp * 2.0 + vec3(u_seed * 2.0, 1.8, 0.6));
+                clouds = mix(cloudsLow, cloudsHigh, smoothstep(0.18, 0.90, detailT));
+            }
+            surfCol = mix(surfCol, vec3(0.50, 0.62, 0.74), smoothstep(0.56, 0.80, clouds) * (0.10 + detailT * 0.12));
+
+            vec3 waveP = rp * (70.0 + detailT * 680.0) + vec3(u_time * 0.10, 0.0, -u_time * 0.075);
+            float waveA = fbm(waveP);
+            float waveB = fbm(waveP * 1.9 + vec3(3.1, u_time * 0.05, 1.7));
+            float streaks = smoothstep(0.58, 0.86, waveA) * smoothstep(0.42, 0.78, waveB);
+            float foam = streaks * detailT * max(0.0, dot(n, vdir)) * 0.32;
+            surfCol = mix(surfCol, vec3(0.42, 0.68, 0.88), foam);
+            surfCol += vec3(0.04, 0.10, 0.15) * streaks * detailT;
+        } else if (arch < 1.5) {
+            vec3 earthP = wp * 2.2 + vec3(u_seed * 4.0, 0.7, 1.3);
+            float continent = fbm4(earthP);
+            continent = mix(continent, fbm4(earthP * 1.9 + 3.4), 0.28);
+            float land = smoothstep(0.47, 0.56, continent);
+            float coast = smoothstep(0.44, 0.52, continent) * (1.0 - smoothstep(0.55, 0.63, continent));
+
+            float terrain = fbm4(wp * 6.0 + 2.7);
+            vec3 oceanDeep = vec3(0.025, 0.13, 0.38);
+            vec3 oceanShelf = vec3(0.06, 0.34, 0.58);
+            vec3 grass = vec3(0.10, 0.36, 0.13);
+            vec3 forest = vec3(0.05, 0.22, 0.08);
+            vec3 highland = vec3(0.42, 0.34, 0.18);
+            vec3 beach = vec3(0.63, 0.56, 0.34);
+
+            vec3 water = mix(oceanDeep, oceanShelf, coast * 0.85);
+            vec3 landCol = mix(forest, grass, smoothstep(0.22, 0.72, terrain));
+            landCol = mix(landCol, highland, smoothstep(0.62, 0.88, terrain) * 0.55);
+            surfCol = mix(water, landCol, land);
+            surfCol = mix(surfCol, beach, coast * 0.50);
+
+            float clouds = fbm4(wp * 3.0 + vec3(u_time * 0.018, 2.1, -u_time * 0.012));
+            clouds = smoothstep(0.56, 0.78, clouds);
+            surfCol = mix(surfCol, vec3(0.80, 0.86, 0.88), clouds * (0.12 + detailT * 0.13));
+            atm = vec3(0.34, 0.62, 0.92);
         } else {
             float n1 = fbm4(wp * 1.8 + u_seed);
             float n2 = fbm4(wp * 3.2 + 0.5 + u_seed * 2.0);
@@ -116,9 +155,9 @@ void main(){
         surfCol *= diff;
 
         // Sun glint on water (high detail only)
-        if (arch < 0.5 && u_detail > 0.5) {
+        if (arch < 0.5 && detailT > 0.03) {
             vec3 halfV = normalize(lightDir + vdir);
-            float spec = pow(max(0.0, dot(n, halfV)), 64.0) * sunLit * 0.42;
+            float spec = pow(max(0.0, dot(n, halfV)), 48.0) * sunLit * 0.62 * detailT;
             surfCol += vec3(0.65, 0.82, 1.0) * spec;
         }
 

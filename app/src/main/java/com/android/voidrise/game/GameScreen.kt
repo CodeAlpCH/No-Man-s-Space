@@ -6,11 +6,13 @@ import com.android.voidrise.game.entities.Spaceship
 import com.android.voidrise.game.input.ThrottleLever
 import com.android.voidrise.game.input.VirtualJoystick
 import com.android.voidrise.game.render.BlackHoleRenderer
+import com.android.voidrise.game.render.AtmosphereFogRenderer
 import com.android.voidrise.game.render.ExhaustRenderer
 import com.android.voidrise.game.render.FlightCamera
 import com.android.voidrise.game.render.GalaxyRenderer
 import com.android.voidrise.game.render.PlanetRenderer
 import com.android.voidrise.game.render.SpaceshipRenderer
+import com.android.voidrise.game.ui.FlightBannerHud
 import com.android.voidrise.game.ui.GalaxyMapHud
 import com.android.voidrise.game.ui.PlanetDistanceHud
 import com.android.voidrise.game.ui.SpeedHud
@@ -29,6 +31,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     companion object {
         /** Temporarily disabled — planet focus next. */
         private const val BLACK_HOLE_ENABLED = false
+        private const val START_SURFACE_DISTANCE_KM = 10_000f
     }
 
     // ─── Core Systems ─────────────────────────────────────────────────────────
@@ -41,6 +44,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val galaxyRenderer = GalaxyRenderer()
     private val particles      = ParticleSystem()
     private val exhaustRenderer = ExhaustRenderer()
+    private val atmosphereFogRenderer = AtmosphereFogRenderer()
     private val audio          = AudioManager()
 
     // ─── Controls ─────────────────────────────────────────────────────────────
@@ -54,22 +58,29 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private var displaySpeed   = 0f
     private var time           = 0f
     private var planetLabel: PlanetDistanceHud.Label? = null
+    private val flightBanner = FlightBannerHud()
+    private var wasInsideAtmosphere = false
+    private val spawnDir = Vector3()
 
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     override fun show() {
         GraphicsQuality.detect()
-        ship.position.set(0f, 30f, -380f)
+        placeShipAtPlanetApproach(WorldPlanet.terraNova)
 
         bhRenderer.init()
         planetRenderer.init()
         shipRenderer.init()
         galaxyRenderer.init()
         exhaustRenderer.init()
+        atmosphereFogRenderer.init()
         audio.init()
+        warpButton.load()
 
         flightCam.snapTo(ship)
         layoutControls()
+        atmosphereFogRenderer.resize(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
+        wasInsideAtmosphere = isInsideAtmosphere()
     }
 
     private fun layoutControls() {
@@ -91,7 +102,9 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         throttle.enabled = !warpSystem.isEngaged()
         throttle.update(dt)
         warpButton.update(warpSystem, ship.position)
+        warpButton.updateAnim(dt, warpSystem)
         updateShip(dt)
+        updateAtmosphereEntry(dt)
         if (BLACK_HOLE_ENABLED) updateBH(dt)
         flightCam.update(ship, dt, warpSystem.isEngaged(), warpSystem.isActive())
         particles.update(dt)
@@ -129,6 +142,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         val sw = Gdx.graphics.width.toFloat()
         val sh = Gdx.graphics.height.toFloat()
         particles.draw(game.shapes, flightCam.cam, sw, sh)
+        atmosphereFogRenderer.render(WorldPlanet.surfaceDistance(ship.position), sw, sh, time)
 
         drawHud(sw, sh)
     }
@@ -136,6 +150,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     // ─── Update ───────────────────────────────────────────────────────────────
 
     private var wasWarpActive = false
+    private var wasWarpCountdown = false
 
     private fun updateShip(dt: Float) {
         val dir = joystick.direction()
@@ -143,7 +158,20 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.yawInput   =  dir.x
         ship.throttle   = if (warpSystem.isActive()) 1f else throttle.value
 
+        val timerBefore = warpSystem.countdownTimer
+
         warpSystem.update(dt, ship.position)
+
+        val countdown = warpSystem.isCharging()
+        if (countdown) {
+            // wasWarpCountdown — not isCharging() before update: button sets COUNTDOWN earlier in the frame
+            if (!wasWarpCountdown) audio.playWarpCharge()
+            audio.updateWarpCharge(warpSystem.countdownTimer, true)
+        } else if (wasWarpCountdown) {
+            audio.updateWarpCharge(timerBefore.coerceAtLeast(0f), true)
+            audio.stopWarpCharge()
+        }
+        wasWarpCountdown = countdown
 
         if (wasWarpActive && !warpSystem.isActive()) {
             ship.velocity.set(ship.forward).scl(Spaceship.MAX_CRUISE_SPEED * 0.65f)
@@ -165,6 +193,12 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         }
 
         displaySpeed = MathUtils.lerp(displaySpeed, ship.velocity.len(), dt * 4f)
+
+        audio.updateEngine(
+            throttle = if (warpSystem.isActive()) 1f else throttle.value,
+            warpEngaged = warpSystem.isEngaged(),
+            dt = dt,
+        )
     }
 
     private fun updateBH(dt: Float) {
@@ -172,8 +206,30 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         bhEntity.update(dt, prox)
     }
 
+    private fun updateAtmosphereEntry(dt: Float) {
+        flightBanner.update(dt)
+        val insideAtmosphere = isInsideAtmosphere()
+        if (insideAtmosphere && !wasInsideAtmosphere) {
+            flightBanner.showAtmosphereEntry()
+        }
+        wasInsideAtmosphere = insideAtmosphere
+    }
+
+    private fun isInsideAtmosphere(): Boolean =
+        WorldPlanet.surfaceDistance(ship.position) <= WorldPlanet.ATMOSPHERE_SURFACE_KM
+
     private fun respawn() {
-        ship.position.set(0f, 30f, -380f)
+        placeShipAtPlanetApproach(WorldPlanet.terraNova)
+        flightCam.snapTo(ship)
+        audio.playBoost()
+    }
+
+    private fun placeShipAtPlanetApproach(planet: WorldPlanet.Planet) {
+        spawnDir.set(0f, 30f, -380f).sub(planet.position).nor()
+        ship.position.set(planet.position).mulAdd(
+            spawnDir,
+            planet.radius + START_SURFACE_DISTANCE_KM,
+        )
         ship.velocity.setZero()
         ship.warpActive = false
         warpSystem.deactivate()
@@ -181,8 +237,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.forward.set(0f, 0f, -1f)
         ship.up.set(0f, 1f, 0f)
         ship.right.set(1f, 0f, 0f)
-        flightCam.snapTo(ship)
-        audio.playBoost()
     }
 
     // ─── Draw ─────────────────────────────────────────────────────────────────
@@ -194,11 +248,15 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     // ─── HUD ──────────────────────────────────────────────────────────────────
 
     private fun drawHud(sw: Float, sh: Float) {
-        planetLabel = PlanetDistanceHud.compute(
-            flightCam.cam, ship.position,
-            WorldPlanet.position, WorldPlanet.RADIUS, WorldPlanet.NAME,
-            game.hudFont, game.hudFontLarge, sw, sh,
-        )
+        planetLabel = WorldPlanet.planets
+            .mapNotNull { planet ->
+                PlanetDistanceHud.compute(
+                    flightCam.cam, ship.position,
+                    planet.position, planet.radius, planet.name,
+                    game.hudFont, game.hudFontLarge, sw, sh,
+                )
+            }
+            .minByOrNull { it.distKm }
 
         game.shapes.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
         game.shapes.begin(ShapeRenderer.ShapeType.Filled)
@@ -207,10 +265,11 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         joystick.draw(game.shapes)
         warpButton.drawFilled(game.shapes, warpSystem, time)
         drawBHProximityWarning(sw, sh)
+        flightBanner.drawBackground(game.shapes, sw, sh)
         GalaxyMapHud.draw(
             game.shapes, sw, sh,
             ship.position, ship.right, ship.forward,
-            WorldPlanet.position, time,
+            WorldPlanet.planets.map { it.position }, time,
             linePass = false,
         )
         planetLabel?.let {
@@ -219,12 +278,17 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
         game.shapes.end()
 
+        game.batch.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
+        game.batch.begin()
+        warpButton.drawSprite(game.batch, warpSystem)
+        game.batch.end()
+
         game.shapes.begin(ShapeRenderer.ShapeType.Line)
         warpButton.drawLines(game.shapes, warpSystem, time)
         GalaxyMapHud.draw(
             game.shapes, sw, sh,
             ship.position, ship.right, ship.forward,
-            WorldPlanet.position, time,
+            WorldPlanet.planets.map { it.position }, time,
             linePass = true,
         )
         game.shapes.end()
@@ -234,8 +298,9 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         planetLabel?.let { label ->
             PlanetDistanceHud.drawText(game.batch, label, game.hudFont, game.hudFontLarge)
         }
-        SpeedHud.drawText(game.batch, game.hudFontLarge, displaySpeed, warpSystem.isActive())
-        warpButton.drawLabel(game.batch, game.hudFontLarge, game.hudFont, warpSystem)
+        SpeedHud.drawText(game.batch, game.hudFontSpeed, displaySpeed, warpSystem.isActive())
+        flightBanner.drawText(game.batch, game.hudFontLarge, sw, sh)
+        warpButton.drawLabel(game.batch, game.hudFontCountdown, game.hudFontWarp, warpSystem)
         game.batch.end()
     }
 
@@ -256,6 +321,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     override fun resize(width: Int, height: Int) {
         flightCam.resize(width, height)
         layoutControls()
+        atmosphereFogRenderer.resize(width.toFloat(), height.toFloat())
     }
 
     override fun dispose() {
@@ -264,6 +330,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         shipRenderer.dispose()
         galaxyRenderer.dispose()
         exhaustRenderer.dispose()
+        atmosphereFogRenderer.dispose()
+        warpButton.dispose()
         audio.dispose()
         particles.clear()
     }

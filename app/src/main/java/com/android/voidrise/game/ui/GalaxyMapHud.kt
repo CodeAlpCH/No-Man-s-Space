@@ -34,7 +34,7 @@ object GalaxyMapHud {
         shipPos: Vector3,
         shipRight: Vector3,
         shipForward: Vector3,
-        planetPos: Vector3,
+        planetPositions: List<Vector3>,
         time: Float,
         linePass: Boolean,
     ) {
@@ -46,7 +46,9 @@ object GalaxyMapHud {
 
         if (!linePass) {
             drawFilledDisc(shapes, cx, cy, radius, inner, time)
-            drawBlip(shapes, cx, cy, inner, shipPos, shipRight, shipForward, planetPos, 5.5f, true, time)
+            planetPositions.forEach { planetPos ->
+                drawBlip(shapes, cx, cy, inner, shipPos, shipRight, shipForward, planetPos, 5.5f, true, time)
+            }
             for (i in NAV_STARS_XZ.indices step 2) {
                 starPos.set(NAV_STARS_XZ[i], shipPos.y, NAV_STARS_XZ[i + 1])
                 drawBlip(
