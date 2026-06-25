@@ -22,8 +22,8 @@ class Spaceship {
     var yawInput    = 0f    // -1 (left)      .. +1 (right)
     /** 0..1 from the throttle lever – 0 means engines off, 1 = full thrust */
     var throttle    = 0f
-    /** Boost button: extra burst on top of throttle */
-    var boostActive = false
+    /** Hyperdrive engaged — set by WarpSystem */
+    var warpActive = false
 
     /** 0..1 visual only – drives engine glow size */
     var thrustLevel = 0f
@@ -56,16 +56,22 @@ class Spaceship {
         up.set(0f, 1f,  0f).mul(rotMat)
         right.set(1f, 0f, 0f).mul(rotMat)
 
-        // ── Thrust (throttle lever + optional boost) ─────────────────────────
+        // ── Warp (hyperdrive) ─────────────────────────────────────────────────
+        if (warpActive) {
+            velocity.set(forward).scl(WARP_SPEED)
+            position.mulAdd(velocity, delta)
+            thrustLevel = 1f
+            return
+        }
+
+        // ── Thrust (throttle lever) ─────────────────────────────────────────
         val normalThrust  = throttle * CRUISE_THRUST
-        val boostThrust   = if (boostActive) BOOST_EXTRA else 0f
-        val totalThrust   = normalThrust + boostThrust
+        val totalThrust   = normalThrust
 
         velocity.mulAdd(forward, totalThrust * delta)
 
         // ── Speed cap ────────────────────────────────────────────────────────
-        val maxV = if (boostActive) MAX_BOOST_SPEED
-                   else throttle * MAX_CRUISE_SPEED + 1f   // always at least 1 to prevent NaN
+        val maxV = throttle * MAX_CRUISE_SPEED + 1f
         val spd = velocity.len()
         if (spd > maxV) velocity.scl(maxV / spd)
 
@@ -80,7 +86,7 @@ class Spaceship {
         position.mulAdd(velocity, delta)
 
         // ── Visual thrust level (drives engine glow) ─────────────────────────
-        thrustLevel = throttle + (if (boostActive) 0.5f else 0f)
+        thrustLevel = throttle
     }
 
     /** World-space positions of the two engine exhausts. */
@@ -91,12 +97,11 @@ class Spaceship {
     }
 
     companion object {
-        const val CRUISE_THRUST    = 55f      // force per unit throttle
-        const val BOOST_EXTRA      = 130f     // extra when boost held
-        const val MAX_CRUISE_SPEED = 120f
-        const val MAX_BOOST_SPEED  = 280f
-        const val TURN_RATE        = 1.35f    // rad/s
-        const val DRAG_CRUISE      = 0.30f    // velocity loss per second (throttle > 0)
-        const val DRAG_STOP        = 1.40f    // velocity loss per second (throttle = 0, stops in ~2s)
+        const val WARP_SPEED         = 2500f   // km/s — 1 unit = 1 km
+        const val CRUISE_THRUST      = 55f
+        const val MAX_CRUISE_SPEED   = 120f
+        const val TURN_RATE          = 1.35f
+        const val DRAG_CRUISE        = 0.30f
+        const val DRAG_STOP          = 1.40f
     }
 }

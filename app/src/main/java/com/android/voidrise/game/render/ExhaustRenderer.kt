@@ -12,9 +12,6 @@ import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
 
-/**
- * Two shader plumes — fixed GPU cost (2 draws), looks like real exhaust on all devices.
- */
 class ExhaustRenderer {
 
     private lateinit var shader : ShaderProgram
@@ -46,6 +43,7 @@ class ExhaustRenderer {
         shader.setUniformMatrix("u_projViewTrans", camera.combined)
         shader.setUniformf("u_time", time)
         shader.setUniformf("u_thrust", thrust)
+        shader.setUniformf("u_warp", 0f)
 
         drawPlume(eL, ship.quaternion, plumeW, plumeLen)
         drawPlume(eR, ship.quaternion, plumeW, plumeLen)
@@ -69,8 +67,7 @@ class ExhaustRenderer {
         quadMesh.render(shader, GL20.GL_TRIANGLES)
     }
 
-  private fun buildQuadMesh(): Mesh {
-        // Local +Z = behind ship (exhaust direction)
+    private fun buildQuadMesh(): Mesh {
         val verts = floatArrayOf(
             -0.5f, 0f, 0f,  0f, 0f,
              0.5f, 0f, 0f,  1f, 0f,

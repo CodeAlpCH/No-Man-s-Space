@@ -1,6 +1,8 @@
 package com.android.voidrise.game
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.math.Vector3
+import com.android.voidrise.game.world.WorldPlanet
 
 /**
  * Auto-detects device tier so Fold-class phones keep full visuals,
@@ -16,9 +18,13 @@ object GraphicsQuality {
     val planetMeshSegments: Int
         get() = if (tier == Tier.HIGH) 72 else 40
 
-    /** 0 = cheap ocean shader, 1 = full detail */
-    val planetShaderDetail: Float
-        get() = if (tier == Tier.HIGH) 1f else 0f
+    /** Only applies once inside mesh LOD range (very close). */
+    fun planetShaderDetail(shipPos: Vector3): Float {
+        val surfaceDist = WorldPlanet.surfaceDistance(shipPos)
+        if (surfaceDist > 800f) return 0f
+        if (tier == Tier.HIGH) return 1f
+        return 0f
+    }
 
     fun detect() {
         val g = Gdx.graphics

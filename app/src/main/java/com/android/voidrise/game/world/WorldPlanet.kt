@@ -14,6 +14,12 @@ object WorldPlanet {
     const val NAME   = "Kepler"
     const val RADIUS = 42_000f
 
+    /** Full 3D mesh + planet.frag below this; cheap billboard impostor above. */
+    const val MESH_LOD_SURFACE_KM = 1_500f
+
+    /** Warp auto-stops and “too close” warnings use this (atmosphere entry). */
+    const val ATMOSPHERE_SURFACE_KM = 1_000f
+
     val position = Vector3(14_000f, 6_000f, -188_000f)
 
     const val SEED  = 0.04f   // arch 0 = Ocean (planet.frag)
@@ -24,6 +30,9 @@ object WorldPlanet {
 
     /** Straight-line distance from a world position. */
     fun distanceFrom(from: Vector3): Float = from.dst(position)
+
+    fun surfaceDistance(from: Vector3): Float =
+        (distanceFrom(from) - RADIUS).coerceAtLeast(0f)
 
     /** Apparent angular radius in degrees (for debug / HUD). */
     fun apparentDiameterDeg(from: Vector3): Float {

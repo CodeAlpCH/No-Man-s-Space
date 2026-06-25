@@ -15,6 +15,9 @@ import kotlin.math.min
  */
 class ThrottleLever {
 
+    /** When false, lever ignores touch and draws dimmed (e.g. during warp). */
+    var enabled = true
+
     var value = 0f          // 0 = engines off, 1 = full thrust
         private set
 
@@ -23,6 +26,11 @@ class ThrottleLever {
     private var trackBot   = 0f   // Y of 0% throttle
     private var trackTop   = 0f   // Y of 100% throttle
     private var touchZoneW = 0f   // X width for touch capture
+
+    /** Center X of the lever track — for HUD alignment. */
+    val leverCenterX get() = cx
+    /** Y of the 0% throttle mark (bottom of track). */
+    val leverBottomY get() = trackBot
 
     private var activePtrIdx = -1
     private var pulseTimer   = 0f
@@ -36,6 +44,11 @@ class ThrottleLever {
 
     fun update(delta: Float) {
         pulseTimer = (pulseTimer + delta * 1.5f) % MathUtils.PI2
+
+        if (!enabled) {
+            if (activePtrIdx != -1 && !Gdx.input.isTouched(activePtrIdx)) activePtrIdx = -1
+            return
+        }
 
         val h = Gdx.graphics.height.toFloat()
 
@@ -72,15 +85,17 @@ class ThrottleLever {
         val trackW = 6f
         val knobW = 44f
         val knobH = 22f
+        val dim = if (enabled) 1f else 0.38f
 
         // ── Track background ──────────────────────────────────────────────────
-        shapes.color.set(0.10f, 0.12f, 0.22f, 0.50f)
+        shapes.color.set(0.10f, 0.12f, 0.22f, 0.50f * dim)
         shapes.rectLine(cx, trackBot, cx, trackTop, trackW)
 
         // ── Active portion (below knob = filled) ──────────────────────────────
-        val cr = 0.25f + value * 0.75f
-        val cg = 0.65f + value * 0.30f
-        shapes.color.set(cr, cg, 1f, 0.80f)
+        val cr = (0.25f + value * 0.75f) * dim + (1f - dim) * 0.35f
+        val cg = (0.65f + value * 0.30f) * dim + (1f - dim) * 0.35f
+        val cb = dim
+        shapes.color.set(cr, cg, cb, 0.80f * dim)
         if (knobY > trackBot + 2f) {
             shapes.rectLine(cx, trackBot, cx, knobY, trackW + 2f)
         }
@@ -88,42 +103,35 @@ class ThrottleLever {
         // ── Tick marks at 25% / 50% / 75% ────────────────────────────────────
         for (frac in floatArrayOf(0.25f, 0.50f, 0.75f)) {
             val ty = trackBot + frac * (trackTop - trackBot)
-            val tickAlpha = if (value >= frac) 0.55f else 0.18f
+            val tickAlpha = (if (value >= frac) 0.55f else 0.18f) * dim
             shapes.color.set(0.60f, 0.85f, 1f, tickAlpha)
             shapes.rectLine(cx - 10f, ty, cx + 10f, ty, 1.5f)
         }
 
         // ── Knob ──────────────────────────────────────────────────────────────
-        // Outer glow
-        shapes.color.set(cr, cg, 1f, 0.18f + pulse * 0.08f)
+        shapes.color.set(cr, cg, cb, (0.18f + pulse * 0.08f) * dim)
         shapes.rect(cx - knobW * 0.5f - 6f, knobY - knobH * 0.5f - 4f,
                     knobW + 12f, knobH + 8f)
 
-        // Main knob body
-        shapes.color.set(0.15f, 0.20f, 0.38f, 0.90f)
+        shapes.color.set(0.15f, 0.20f, 0.38f, 0.90f * dim)
         shapes.rect(cx - knobW * 0.5f, knobY - knobH * 0.5f, knobW, knobH)
 
-        // Knob top edge (bright accent line)
-        shapes.color.set(cr, cg, 1f, 0.95f)
+        shapes.color.set(cr, cg, cb, 0.95f * dim)
         shapes.rectLine(cx - knobW * 0.5f + 4f, knobY + knobH * 0.5f - 3f,
                         cx + knobW * 0.5f - 4f, knobY + knobH * 0.5f - 3f, 2f)
 
-        // Grip lines (3 horizontal lines across knob center)
-        shapes.color.set(0.50f, 0.75f, 1f, 0.45f)
+        shapes.color.set(0.50f, 0.75f, 1f, 0.45f * dim)
         for (g in -1..1) {
             val gy = knobY + g * 5f
             shapes.rectLine(cx - knobW * 0.4f, gy, cx + knobW * 0.4f, gy, 1.5f)
         }
 
-        // ── MIN / MAX labels at ends ───────────────────────────────────────────
-        // (just horizontal markers instead of text)
-        shapes.color.set(0.35f, 0.65f, 1f, 0.30f)
+        shapes.color.set(0.35f, 0.65f, 1f, 0.30f * dim)
         shapes.rectLine(cx - 14f, trackBot,  cx + 14f, trackBot,  1.5f)
         shapes.rectLine(cx - 14f, trackTop,  cx + 14f, trackTop,  1.5f)
 
-        // Full-thrust arrow marker at top
         val ay = trackTop + 12f
-        shapes.color.set(1f, 0.70f, 0.20f, 0.45f)
+        shapes.color.set(1f, 0.70f, 0.20f, 0.45f * dim)
         shapes.triangle(cx, ay + 8f,  cx - 9f, ay,  cx + 9f, ay)
     }
 }

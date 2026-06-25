@@ -9,9 +9,14 @@ import com.android.voidrise.game.render.BlackHoleRenderer
 import com.android.voidrise.game.render.ExhaustRenderer
 import com.android.voidrise.game.render.FlightCamera
 import com.android.voidrise.game.render.GalaxyRenderer
+import com.android.voidrise.game.render.PlanetRenderer
 import com.android.voidrise.game.render.SpaceshipRenderer
 import com.android.voidrise.game.ui.GalaxyMapHud
 import com.android.voidrise.game.ui.PlanetDistanceHud
+import com.android.voidrise.game.ui.SpeedHud
+import com.android.voidrise.game.ui.WarpButton
+import com.android.voidrise.game.ui.WarpScreenFx
+import com.android.voidrise.game.warp.WarpSystem
 import com.android.voidrise.game.world.WorldPlanet
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.ScreenAdapter
@@ -32,6 +37,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val flightCam      = FlightCamera()
     private val bhEntity       = BlackHoleEntity(Vector3(0f, 0f, 0f))
     private val bhRenderer     = BlackHoleRenderer()
+    private val planetRenderer = PlanetRenderer(bhRenderer)
     private val shipRenderer   = SpaceshipRenderer()
     private val galaxyRenderer = GalaxyRenderer()
     private val particles      = ParticleSystem()
@@ -39,8 +45,10 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val audio          = AudioManager()
 
     // ─── Controls ─────────────────────────────────────────────────────────────
-    private val joystick = VirtualJoystick()    // right side – heading
-    private val throttle = ThrottleLever()      // left side  – speed
+    private val joystick   = VirtualJoystick()
+    private val throttle   = ThrottleLever()
+    private val warpButton = WarpButton()
+    private val warpSystem = WarpSystem()
 
     // ─── HUD State ────────────────────────────────────────────────────────────
     private var proximityAlpha = 0f
@@ -55,6 +63,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.position.set(0f, 30f, -380f)
 
         bhRenderer.init()
+        planetRenderer.init()
         shipRenderer.init()
         galaxyRenderer.init()
         exhaustRenderer.init()
@@ -69,6 +78,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         val h = Gdx.graphics.height
         joystick.layout(w, h)
         throttle.layout(w, h)
+        warpButton.layout(w, h)
+        SpeedHud.layout(w, h, throttle.leverCenterX, throttle.leverBottomY)
     }
 
     // ─── Render Loop ──────────────────────────────────────────────────────────
@@ -78,10 +89,12 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         time += dt
 
         joystick.update(dt)
+        throttle.enabled = !warpSystem.isEngaged()
         throttle.update(dt)
+        warpButton.update(warpSystem, ship.position)
         updateShip(dt)
         if (BLACK_HOLE_ENABLED) updateBH(dt)
-        flightCam.update(ship, dt)
+        flightCam.update(ship, dt, warpSystem.isEngaged(), warpSystem.isActive())
         particles.update(dt)
 
         // ── Draw ──────────────────────────────────────────────────────────────
@@ -123,11 +136,21 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
     // ─── Update ───────────────────────────────────────────────────────────────
 
+    private var wasWarpActive = false
+
     private fun updateShip(dt: Float) {
         val dir = joystick.direction()
-        ship.pitchInput  = -dir.y
-        ship.yawInput    =  dir.x
-        ship.throttle    = throttle.value
+        ship.pitchInput = -dir.y
+        ship.yawInput   =  dir.x
+        ship.throttle   = if (warpSystem.isActive()) 1f else throttle.value
+
+        warpSystem.update(dt, ship.position)
+
+        if (wasWarpActive && !warpSystem.isActive()) {
+            ship.velocity.set(ship.forward).scl(Spaceship.MAX_CRUISE_SPEED * 0.65f)
+        }
+        wasWarpActive = warpSystem.isActive()
+        ship.warpActive = wasWarpActive
 
         ship.update(dt)
 
@@ -153,6 +176,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private fun respawn() {
         ship.position.set(0f, 30f, -380f)
         ship.velocity.setZero()
+        ship.warpActive = false
+        warpSystem.deactivate()
         ship.quaternion.idt()
         ship.forward.set(0f, 0f, -1f)
         ship.up.set(0f, 1f, 0f)
@@ -164,15 +189,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     // ─── Draw ─────────────────────────────────────────────────────────────────
 
     private fun drawWorldPlanet() {
-        val p = WorldPlanet
-        bhRenderer.beginPlanetBatch(flightCam.cam)
-        bhRenderer.renderPlanetSphere(
-            p.position.x, p.position.y, p.position.z,
-            p.RADIUS,
-            p.baseColor, p.glowColor,
-            p.TYPE, time, 0f, p.SEED,
-        )
-        bhRenderer.endPlanetBatch()
+        planetRenderer.render(flightCam.cam, ship.position, time)
     }
 
     // ─── HUD ──────────────────────────────────────────────────────────────────
@@ -189,7 +206,9 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
         throttle.draw(game.shapes)
         joystick.draw(game.shapes)
-        drawSpeedBar(sw, sh)
+        SpeedHud.drawBackground(game.shapes)
+        warpButton.drawFilled(game.shapes, warpSystem, time)
+        SpeedHud.drawBar(game.shapes, displaySpeed, warpSystem.isActive())
         drawBHProximityWarning(sw, sh)
         GalaxyMapHud.draw(
             game.shapes, sw, sh,
@@ -212,28 +231,15 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         )
         game.shapes.end()
 
+        game.batch.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
+        game.batch.begin()
         planetLabel?.let { label ->
-            game.batch.projectionMatrix.setToOrtho2D(0f, 0f, sw, sh)
-            game.batch.begin()
             PlanetDistanceHud.drawText(game.batch, label, game.hudFont, game.hudFontLarge)
-            game.batch.end()
         }
-    }
-
-    private fun drawSpeedBar(sw: Float, sh: Float) {
-        val barW = sw * 0.18f
-        val barH = 5f
-        val bx   = sw * 0.50f - barW * 0.5f
-        val by   = sh - 36f
-
-        game.shapes.color.set(1f, 1f, 1f, 0.06f)
-        game.shapes.rect(bx, by, barW, barH)
-
-        val fill = (displaySpeed / Spaceship.MAX_CRUISE_SPEED).coerceIn(0f, 1f)
-        val cr   = MathUtils.lerp(0.3f, 1.0f, fill)
-        val cg   = MathUtils.lerp(0.8f, 0.35f, fill)
-        game.shapes.color.set(cr, cg, 1f - fill * 0.4f, 0.80f)
-        game.shapes.rect(bx, by, barW * fill, barH)
+        SpeedHud.drawText(game.batch, game.hudFont, game.hudFontLarge, displaySpeed, warpSystem.isActive())
+        warpButton.drawLabel(game.batch, game.hudFont, warpSystem)
+        WarpScreenFx.drawOverlayText(game.batch, game.hudFont, sw, sh, warpSystem)
+        game.batch.end()
     }
 
     private fun drawBHProximityWarning(sw: Float, sh: Float) {
@@ -257,6 +263,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
 
     override fun dispose() {
         bhRenderer.dispose()
+        planetRenderer.dispose()
         shipRenderer.dispose()
         galaxyRenderer.dispose()
         exhaustRenderer.dispose()

@@ -187,7 +187,7 @@ class BlackHoleRenderer {
 
     // ─── Planet/Matter batch ──────────────────────────────────────────────────
 
-    fun beginPlanetBatch(camera: PerspectiveCamera) {
+    fun beginPlanetBatch(camera: PerspectiveCamera, shaderDetail: Float) {
         Gdx.gl.glEnable(GL20.GL_BLEND)
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         Gdx.gl.glDepthMask(true)
@@ -195,7 +195,7 @@ class BlackHoleRenderer {
         planetShader.bind()
         planetShader.setUniformMatrix("u_projViewTrans", camera.combined)
         planetShader.setUniformf("u_camPos", camera.position.x, camera.position.y, camera.position.z)
-        planetShader.setUniformf("u_detail", GraphicsQuality.planetShaderDetail)
+        planetShader.setUniformf("u_detail", shaderDetail)
     }
 
     /**
@@ -227,7 +227,7 @@ class BlackHoleRenderer {
     }
 
     // kept for compatibility – unused now
-    fun beginMatterBatch(camera: PerspectiveCamera) = beginPlanetBatch(camera)
+    fun beginMatterBatch(camera: PerspectiveCamera) = beginPlanetBatch(camera, 0f)
     fun endMatterBatch() = endPlanetBatch()
 
     // ─── Mesh builders ────────────────────────────────────────────────────────
