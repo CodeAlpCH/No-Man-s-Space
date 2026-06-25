@@ -6,6 +6,7 @@ import com.android.voidrise.game.entities.Spaceship
 import com.android.voidrise.game.input.ThrottleLever
 import com.android.voidrise.game.input.VirtualJoystick
 import com.android.voidrise.game.render.BlackHoleRenderer
+import com.android.voidrise.game.render.ExhaustRenderer
 import com.android.voidrise.game.render.FlightCamera
 import com.android.voidrise.game.render.GalaxyRenderer
 import com.android.voidrise.game.render.SpaceshipRenderer
@@ -34,7 +35,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val shipRenderer   = SpaceshipRenderer()
     private val galaxyRenderer = GalaxyRenderer()
     private val particles      = ParticleSystem()
-    private val engineExhaust  = EngineExhaust()
+    private val exhaustRenderer = ExhaustRenderer()
     private val audio          = AudioManager()
 
     // ─── Controls ─────────────────────────────────────────────────────────────
@@ -50,11 +51,13 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     // ─── Init ─────────────────────────────────────────────────────────────────
 
     override fun show() {
+        GraphicsQuality.detect()
         ship.position.set(0f, 30f, -380f)
 
         bhRenderer.init()
         shipRenderer.init()
         galaxyRenderer.init()
+        exhaustRenderer.init()
         audio.init()
 
         flightCam.snapTo(ship)
@@ -107,18 +110,12 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         shipRenderer.render(ship, flightCam.cam)
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
 
+        exhaustRenderer.render(ship, flightCam.cam, time)
+
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
 
         val sw = Gdx.graphics.width.toFloat()
         val sh = Gdx.graphics.height.toFloat()
-
-        // Additive exhaust (screen-space plasma)
-        Gdx.gl.glEnable(GL20.GL_BLEND)
-        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE)
-        engineExhaust.draw(game.shapes, flightCam.cam, sw, sh)
-        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
-        Gdx.gl.glDisable(GL20.GL_BLEND)
-
         particles.draw(game.shapes, flightCam.cam, sw, sh)
 
         drawHud(sw, sh)
@@ -133,7 +130,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.throttle    = throttle.value
 
         ship.update(dt)
-        engineExhaust.update(ship, dt)
 
         if (BLACK_HOLE_ENABLED) {
             val prox = bhEntity.proximityFraction(ship.position)
@@ -263,8 +259,8 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         bhRenderer.dispose()
         shipRenderer.dispose()
         galaxyRenderer.dispose()
+        exhaustRenderer.dispose()
         audio.dispose()
         particles.clear()
-        engineExhaust.clear()
     }
 }

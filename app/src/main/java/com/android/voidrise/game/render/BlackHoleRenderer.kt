@@ -1,5 +1,6 @@
 package com.android.voidrise.game.render
 
+import com.android.voidrise.game.GraphicsQuality
 import com.android.voidrise.game.entities.BlackHoleEntity
 import com.android.voidrise.game.entities.Player
 import com.badlogic.gdx.Gdx
@@ -41,7 +42,8 @@ class BlackHoleRenderer {
         glowShader   = loadShader("glow")
         planetShader = loadShader("planet")
         sphereMesh   = buildSphereMesh(36, 36)
-        planetMesh   = buildSphereMesh(80, 80)
+        val segs     = GraphicsQuality.planetMeshSegments
+        planetMesh   = buildSphereMesh(segs, segs)
         diskMesh     = buildDiskMesh()
     }
 
@@ -193,6 +195,7 @@ class BlackHoleRenderer {
         planetShader.bind()
         planetShader.setUniformMatrix("u_projViewTrans", camera.combined)
         planetShader.setUniformf("u_camPos", camera.position.x, camera.position.y, camera.position.z)
+        planetShader.setUniformf("u_detail", GraphicsQuality.planetShaderDetail)
     }
 
     /**
