@@ -14,7 +14,6 @@ import com.android.voidrise.game.ui.PlanetDistanceHud
 import com.android.voidrise.game.world.WorldPlanet
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.ScreenAdapter
-import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.MathUtils
@@ -35,6 +34,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
     private val shipRenderer   = SpaceshipRenderer()
     private val galaxyRenderer = GalaxyRenderer()
     private val particles      = ParticleSystem()
+    private val engineExhaust  = EngineExhaust()
     private val audio          = AudioManager()
 
     // ─── Controls ─────────────────────────────────────────────────────────────
@@ -107,12 +107,18 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         shipRenderer.render(ship, flightCam.cam)
         Gdx.gl.glDisable(GL20.GL_CULL_FACE)
 
-        drawEngineGlow()
-
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
 
         val sw = Gdx.graphics.width.toFloat()
         val sh = Gdx.graphics.height.toFloat()
+
+        // Additive exhaust (screen-space plasma)
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE)
+        engineExhaust.draw(game.shapes, flightCam.cam, sw, sh)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+
         particles.draw(game.shapes, flightCam.cam, sw, sh)
 
         drawHud(sw, sh)
@@ -127,6 +133,7 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         ship.throttle    = throttle.value
 
         ship.update(dt)
+        engineExhaust.update(ship, dt)
 
         if (BLACK_HOLE_ENABLED) {
             val prox = bhEntity.proximityFraction(ship.position)
@@ -169,18 +176,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
             p.baseColor, p.glowColor,
             p.TYPE, time, 0f, p.SEED,
         )
-        bhRenderer.endPlanetBatch()
-    }
-
-    private fun drawEngineGlow() {
-        val (eL, eR) = ship.enginePositions()
-        val gSize    = 0.5f + ship.thrustLevel * 0.65f
-        val eColor   = Color(0.28f, 0.68f, 1.0f, 0.85f)
-        val eGlow    = Color(0.45f, 0.88f, 1.0f, 1.0f)
-
-        bhRenderer.beginPlanetBatch(flightCam.cam)
-        bhRenderer.renderPlanetSphere(eL.x, eL.y, eL.z, gSize, eColor, eGlow, 0, time, 0f)
-        bhRenderer.renderPlanetSphere(eR.x, eR.y, eR.z, gSize, eColor, eGlow, 0, time, 0f)
         bhRenderer.endPlanetBatch()
     }
 
@@ -270,5 +265,6 @@ class GameScreen(private val game: VoidriseGame) : ScreenAdapter() {
         galaxyRenderer.dispose()
         audio.dispose()
         particles.clear()
+        engineExhaust.clear()
     }
 }
